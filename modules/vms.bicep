@@ -1,25 +1,39 @@
+// =============================================================================
+// VMs Module - Test VMs in Branch and Spoke Networks
+// =============================================================================
+// Creates VMs in:
+// - Branch1 ("Simulated ExpressRoute" site)
+// - Branch2 ("VPN Backup" site)  
+// - On-prem backend (shared network)
+// - Spoke VNets (Azure workloads)
+// =============================================================================
+
 param location string
 param adminUsername string
 @secure()
 param adminPassword string
 param vmSize string
-param hub1Name string
-param hub2Name string
+param hubName string
 
-// Cloud-init script to install traceroute
+// Cloud-init script to install network diagnostic tools
 var cloudInit = base64('''#cloud-config
 package_update: true
 packages:
   - traceroute
+  - mtr
+  - tcpdump
+  - iperf3
 ''')
 
-// Branch VM
-resource branchVnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'branch1'
+// =============================================================================
+// Branch1 VM ("Simulated ExpressRoute" site)
+// =============================================================================
+resource branch1Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: 'branch1-er'
 }
 
-resource branchNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'branch1-vm-nic'
+resource branch1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+  name: 'branch1-er-vm-nic'
   location: location
   properties: {
     ipConfigurations: [
@@ -27,7 +41,7 @@ resource branchNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         name: 'ipconfig1'
         properties: {
           subnet: {
-            id: '${branchVnet.id}/subnets/main'
+            id: '${branch1Vnet.id}/subnets/main'
           }
           privateIPAllocationMethod: 'Dynamic'
         }
@@ -36,8 +50,8 @@ resource branchNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   }
 }
 
-resource branchVM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
-  name: 'branch1-vm'
+resource branch1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: 'branch1-er-vm'
   location: location
   properties: {
     hardwareProfile: {
@@ -51,7 +65,7 @@ resource branchVM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'branch1-vm-osdisk'
+        name: 'branch1-er-vm-osdisk'
         createOption: 'FromImage'
         managedDisk: {
           storageAccountType: 'Premium_LRS'
@@ -59,7 +73,7 @@ resource branchVM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: 'branch1-vm'
+      computerName: 'branch1-er-vm'
       adminUsername: adminUsername
       adminPassword: adminPassword
       customData: cloudInit
@@ -70,20 +84,22 @@ resource branchVM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: branchNic.id
+          id: branch1Nic.id
         }
       ]
     }
   }
 }
 
-// Hub1 Spoke VMs
-resource spoke1Hub1Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'hub1-spoke1'
+// =============================================================================
+// Branch2 VM ("VPN Backup" site)
+// =============================================================================
+resource branch2Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: 'branch2-vpn'
 }
 
-resource spoke1Hub1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'hub1-spoke1-vm-nic'
+resource branch2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+  name: 'branch2-vpn-vm-nic'
   location: location
   properties: {
     ipConfigurations: [
@@ -91,7 +107,7 @@ resource spoke1Hub1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         name: 'ipconfig1'
         properties: {
           subnet: {
-            id: '${spoke1Hub1Vnet.id}/subnets/main'
+            id: '${branch2Vnet.id}/subnets/main'
           }
           privateIPAllocationMethod: 'Dynamic'
         }
@@ -100,8 +116,8 @@ resource spoke1Hub1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   }
 }
 
-resource spoke1Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
-  name: 'hub1-spoke1-vm'
+resource branch2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: 'branch2-vpn-vm'
   location: location
   properties: {
     hardwareProfile: {
@@ -115,7 +131,7 @@ resource spoke1Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'hub1-spoke1-vm-osdisk'
+        name: 'branch2-vpn-vm-osdisk'
         createOption: 'FromImage'
         managedDisk: {
           storageAccountType: 'Premium_LRS'
@@ -123,7 +139,7 @@ resource spoke1Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: 'hub1-spoke1-vm'
+      computerName: 'branch2-vpn-vm'
       adminUsername: adminUsername
       adminPassword: adminPassword
       customData: cloudInit
@@ -134,19 +150,22 @@ resource spoke1Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: spoke1Hub1Nic.id
+          id: branch2Nic.id
         }
       ]
     }
   }
 }
 
-resource spoke2Hub1Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'hub1-spoke2'
+// =============================================================================
+// On-Prem Backend VM (shared destination for route testing)
+// =============================================================================
+resource onpremVnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: 'onprem-backend'
 }
 
-resource spoke2Hub1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'hub1-spoke2-vm-nic'
+resource onpremNic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+  name: 'onprem-backend-vm-nic'
   location: location
   properties: {
     ipConfigurations: [
@@ -154,17 +173,18 @@ resource spoke2Hub1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         name: 'ipconfig1'
         properties: {
           subnet: {
-            id: '${spoke2Hub1Vnet.id}/subnets/main'
+            id: '${onpremVnet.id}/subnets/main'
           }
-          privateIPAllocationMethod: 'Dynamic'
+          privateIPAllocationMethod: 'Static'
+          privateIPAddress: '10.0.1.10'  // Fixed IP for testing
         }
       }
     ]
   }
 }
 
-resource spoke2Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
-  name: 'hub1-spoke2-vm'
+resource onpremVM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: 'onprem-backend-vm'
   location: location
   properties: {
     hardwareProfile: {
@@ -178,7 +198,7 @@ resource spoke2Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'hub1-spoke2-vm-osdisk'
+        name: 'onprem-backend-vm-osdisk'
         createOption: 'FromImage'
         managedDisk: {
           storageAccountType: 'Premium_LRS'
@@ -186,7 +206,7 @@ resource spoke2Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: 'hub1-spoke2-vm'
+      computerName: 'onprem-backend-vm'
       adminUsername: adminUsername
       adminPassword: adminPassword
       customData: cloudInit
@@ -197,20 +217,22 @@ resource spoke2Hub1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: spoke2Hub1Nic.id
+          id: onpremNic.id
         }
       ]
     }
   }
 }
 
-// Hub2 Spoke VMs
-resource spoke1Hub2Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'hub2-spoke1'
+// =============================================================================
+// Spoke1 VM (Azure workload)
+// =============================================================================
+resource spoke1Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: '${hubName}-spoke1'
 }
 
-resource spoke1Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'hub2-spoke1-vm-nic'
+resource spoke1Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+  name: '${hubName}-spoke1-vm-nic'
   location: location
   properties: {
     ipConfigurations: [
@@ -218,7 +240,7 @@ resource spoke1Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         name: 'ipconfig1'
         properties: {
           subnet: {
-            id: '${spoke1Hub2Vnet.id}/subnets/main'
+            id: '${spoke1Vnet.id}/subnets/main'
           }
           privateIPAllocationMethod: 'Dynamic'
         }
@@ -227,8 +249,8 @@ resource spoke1Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   }
 }
 
-resource spoke1Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
-  name: 'hub2-spoke1-vm'
+resource spoke1VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: '${hubName}-spoke1-vm'
   location: location
   properties: {
     hardwareProfile: {
@@ -242,7 +264,7 @@ resource spoke1Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'hub2-spoke1-vm-osdisk'
+        name: '${hubName}-spoke1-vm-osdisk'
         createOption: 'FromImage'
         managedDisk: {
           storageAccountType: 'Premium_LRS'
@@ -250,7 +272,7 @@ resource spoke1Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: 'hub2-spoke1-vm'
+      computerName: '${hubName}-spoke1-vm'
       adminUsername: adminUsername
       adminPassword: adminPassword
       customData: cloudInit
@@ -261,19 +283,22 @@ resource spoke1Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: spoke1Hub2Nic.id
+          id: spoke1Nic.id
         }
       ]
     }
   }
 }
 
-resource spoke2Hub2Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'hub2-spoke2'
+// =============================================================================
+// Spoke2 VM (Azure workload)
+// =============================================================================
+resource spoke2Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: '${hubName}-spoke2'
 }
 
-resource spoke2Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'hub2-spoke2-vm-nic'
+resource spoke2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+  name: '${hubName}-spoke2-vm-nic'
   location: location
   properties: {
     ipConfigurations: [
@@ -281,7 +306,7 @@ resource spoke2Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
         name: 'ipconfig1'
         properties: {
           subnet: {
-            id: '${spoke2Hub2Vnet.id}/subnets/main'
+            id: '${spoke2Vnet.id}/subnets/main'
           }
           privateIPAllocationMethod: 'Dynamic'
         }
@@ -290,8 +315,8 @@ resource spoke2Hub2Nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   }
 }
 
-resource spoke2Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
-  name: 'hub2-spoke2-vm'
+resource spoke2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: '${hubName}-spoke2-vm'
   location: location
   properties: {
     hardwareProfile: {
@@ -305,7 +330,7 @@ resource spoke2Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'hub2-spoke2-vm-osdisk'
+        name: '${hubName}-spoke2-vm-osdisk'
         createOption: 'FromImage'
         managedDisk: {
           storageAccountType: 'Premium_LRS'
@@ -313,7 +338,7 @@ resource spoke2Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: 'hub2-spoke2-vm'
+      computerName: '${hubName}-spoke2-vm'
       adminUsername: adminUsername
       adminPassword: adminPassword
       customData: cloudInit
@@ -324,15 +349,19 @@ resource spoke2Hub2VM 'Microsoft.Compute/virtualMachines@2023-09-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: spoke2Hub2Nic.id
+          id: spoke2Nic.id
         }
       ]
     }
   }
 }
 
-output branchVMId string = branchVM.id
-output spoke1Hub1VMId string = spoke1Hub1VM.id
-output spoke2Hub1VMId string = spoke2Hub1VM.id
-output spoke1Hub2VMId string = spoke1Hub2VM.id
-output spoke2Hub2VMId string = spoke2Hub2VM.id
+// =============================================================================
+// Outputs
+// =============================================================================
+output branch1VMId string = branch1VM.id
+output branch2VMId string = branch2VM.id
+output onpremVMId string = onpremVM.id
+output spoke1VMId string = spoke1VM.id
+output spoke2VMId string = spoke2VM.id
+output onpremVMPrivateIp string = '10.0.1.10'

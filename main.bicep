@@ -1,22 +1,29 @@
 targetScope = 'subscription'
 
-@description('Primary region for deployment')
-param region1 string = 'westus3'
+// =============================================================================
+// vWAN ExpressRoute/VPN Failover Lab
+// =============================================================================
+// This lab demonstrates the route preference behavior between two S2S VPN 
+// connections simulating ExpressRoute (preferred) and VPN backup scenarios.
+//
+// Lab Design:
+// - Branch1 ("Simulated ExpressRoute"): Advertises aggregate routes (10.0.0.0/16)
+// - Branch2 ("VPN Backup"): Advertises more-specific routes (10.0.1.0/24, 10.0.2.0/24)
+// - Shows how LPM (Longest Prefix Match) can cause VPN to win over "ER"
+// - Demonstrates Route Maps as the solution
+// =============================================================================
 
-@description('Secondary region for deployment (same as primary for intra-region)')
-param region2 string = 'westus3'
+@description('Primary region for deployment')
+param location string = 'westus3'
 
 @description('Resource group name')
-param resourceGroupName string = 'vwan-securehub-lab'
+param resourceGroupName string = 'vwan-failover-lab'
 
 @description('Virtual WAN name')
-param vwanName string = 'vwan-demo'
+param vwanName string = 'vwan-failover'
 
-@description('Hub 1 name')
-param hub1Name string = 'hub1'
-
-@description('Hub 2 name')
-param hub2Name string = 'hub2'
+@description('Hub name')
+param hubName string = 'hub1'
 
 @description('Admin username for VMs')
 param adminUsername string = 'azureuser'
@@ -30,23 +37,25 @@ param vmSize string = 'Standard_DS1_v2'
 
 @description('Azure Firewall SKU')
 @allowed(['Standard', 'Premium'])
-param firewallSku string = 'Premium'
+param firewallSku string = 'Standard'
+
+@description('Enable Route Maps to fix failback (deploy after initial testing)')
+param enableRouteMaps bool = false
 
 // Resource Group
 resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: resourceGroupName
-  location: region1
+  location: location
 }
 
-// Network Infrastructure
+// Network Infrastructure (vWAN, Hub, VNets)
 module network 'modules/network.bicep' = {
   scope: rg
   name: 'network-deployment'
   params: {
-    location: region1
+    location: location
     vwanName: vwanName
-    hub1Name: hub1Name
-    hub2Name: hub2Name
+    hubName: hubName
   }
 }
 
@@ -55,34 +64,29 @@ module vms 'modules/vms.bicep' = {
   scope: rg
   name: 'vms-deployment'
   params: {
-    location: region1
+    location: location
     adminUsername: adminUsername
     adminPassword: adminPassword
     vmSize: vmSize
-    hub1Name: hub1Name
-    hub2Name: hub2Name
+    hubName: hubName
   }
   dependsOn: [
     network
   ]
 }
 
-// VPN Infrastructure
+// VPN Infrastructure (both branch sites)
 module vpn 'modules/vpn.bicep' = {
   scope: rg
   name: 'vpn-deployment'
   params: {
-    location: region1
-    hub1Name: hub1Name
-    hub2Name: hub2Name
+    location: location
+    hubName: hubName
     vwanName: vwanName
-    branchVnetId: network.outputs.branchVnetId
-    hub1Id: network.outputs.hub1Id
-    hub2Id: network.outputs.hub2Id
+    branch1VnetId: network.outputs.branch1VnetId
+    branch2VnetId: network.outputs.branch2VnetId
+    hubId: network.outputs.hubId
   }
-  dependsOn: [
-    network
-  ]
 }
 
 // Azure Firewall and Routing Intent
@@ -90,9 +94,8 @@ module firewall 'modules/firewall.bicep' = {
   scope: rg
   name: 'firewall-deployment'
   params: {
-    location: region1
-    hub1Name: hub1Name
-    hub2Name: hub2Name
+    location: location
+    hubName: hubName
     firewallSku: firewallSku
   }
   dependsOn: [
@@ -106,8 +109,8 @@ module bastion 'modules/bastion.bicep' = {
   scope: rg
   name: 'bastion-deployment'
   params: {
-    location: region1
-    hub1Name: hub1Name
+    location: location
+    hubName: hubName
   }
   dependsOn: [
     network
@@ -115,8 +118,21 @@ module bastion 'modules/bastion.bicep' = {
   ]
 }
 
+// Route Maps (optional - deploy after demonstrating the problem)
+module routeMaps 'modules/route-maps.bicep' = if (enableRouteMaps) {
+  scope: rg
+  name: 'routemaps-deployment'
+  params: {
+    hubName: hubName
+  }
+  dependsOn: [
+    vpn
+  ]
+}
+
 output vwanId string = network.outputs.vwanId
-output hub1Id string = network.outputs.hub1Id
-output hub2Id string = network.outputs.hub2Id
+output hubId string = network.outputs.hubId
 output bastionName string = bastion.outputs.bastionName
+output branch1VpnGwId string = vpn.outputs.branch1VpnGatewayId
+output branch2VpnGwId string = vpn.outputs.branch2VpnGatewayId
 

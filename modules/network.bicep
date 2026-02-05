@@ -1,9 +1,21 @@
+// =============================================================================
+// Network Module - vWAN Hub, Branch VNets, Spoke VNets
+// =============================================================================
+// Creates:
+// - Virtual WAN with single hub
+// - Branch1 VNet (simulates "ExpressRoute" connection)
+// - Branch2 VNet (simulates "VPN Backup" connection)
+// - Spoke VNets connected to hub
+// - Bastion VNet for management access
+// =============================================================================
+
 param location string
 param vwanName string
-param hub1Name string
-param hub2Name string
+param hubName string
 
+// =============================================================================
 // Virtual WAN
+// =============================================================================
 resource vwan 'Microsoft.Network/virtualWans@2023-11-01' = {
   name: vwanName
   location: location
@@ -13,9 +25,11 @@ resource vwan 'Microsoft.Network/virtualWans@2023-11-01' = {
   }
 }
 
-// Virtual Hubs
-resource hub1 'Microsoft.Network/virtualHubs@2023-11-01' = {
-  name: hub1Name
+// =============================================================================
+// Virtual Hub
+// =============================================================================
+resource hub 'Microsoft.Network/virtualHubs@2023-11-01' = {
+  name: hubName
   location: location
   properties: {
     addressPrefix: '192.168.1.0/24'
@@ -23,26 +37,18 @@ resource hub1 'Microsoft.Network/virtualHubs@2023-11-01' = {
       id: vwan.id
     }
     sku: 'Standard'
-    hubRoutingPreference: 'ASPath'
+    // Hub routing preference - set to ExpressRoute to prefer ER when prefix lengths match
+    // Note: LPM still wins regardless of this setting
+    hubRoutingPreference: 'ExpressRoute'
   }
 }
 
-resource hub2 'Microsoft.Network/virtualHubs@2023-11-01' = {
-  name: hub2Name
-  location: location
-  properties: {
-    addressPrefix: '192.168.2.0/24'
-    virtualWan: {
-      id: vwan.id
-    }
-    sku: 'Standard'
-    hubRoutingPreference: 'ASPath'
-  }
-}
-
-// Branch VNET
-resource branchVnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'branch1'
+// =============================================================================
+// Branch1 VNet - "Simulated ExpressRoute" (preferred path)
+// Advertises aggregate prefix: 10.0.0.0/16
+// =============================================================================
+resource branch1Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: 'branch1-er'
   location: location
   properties: {
     addressSpace: {
@@ -65,28 +71,142 @@ resource branchVnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   }
 }
 
-// Bastion VNET
-resource bastionVnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'bastion-vnet'
+// =============================================================================
+// Branch2 VNet - "VPN Backup" (backup path)
+// Advertises more-specific prefixes: 10.0.1.0/24, 10.0.2.0/24
+// =============================================================================
+resource branch2Vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: 'branch2-vpn'
   location: location
   properties: {
     addressSpace: {
-      addressPrefixes: ['10.200.0.0/24']
+      addressPrefixes: ['10.200.0.0/16']
     }
     subnets: [
       {
-        name: 'AzureBastionSubnet'
+        name: 'main'
         properties: {
-          addressPrefix: '10.200.0.0/26'
+          addressPrefix: '10.200.0.0/24'
+        }
+      }
+      {
+        name: 'GatewaySubnet'
+        properties: {
+          addressPrefix: '10.200.255.0/27'
         }
       }
     ]
   }
 }
 
-// Spoke VNETs
-resource spoke1Hub1 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'hub1-spoke1'
+// =============================================================================
+// On-Prem Simulation VNet (shared backend reachable via both branches)
+// This represents the "on-prem" network that both branches advertise routes for
+// =============================================================================
+resource onpremVnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: 'onprem-backend'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['10.0.0.0/16']
+    }
+    subnets: [
+      {
+        name: 'main'
+        properties: {
+          addressPrefix: '10.0.1.0/24'
+        }
+      }
+      {
+        name: 'secondary'
+        properties: {
+          addressPrefix: '10.0.2.0/24'
+        }
+      }
+    ]
+  }
+}
+
+// VNet peering: onprem-backend <-> branch1-er
+resource branch1ToOnprem 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
+  parent: branch1Vnet
+  name: 'branch1-to-onprem'
+  properties: {
+    remoteVirtualNetwork: {
+      id: onpremVnet.id
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    allowGatewayTransit: true
+  }
+}
+
+resource onpremToBranch1 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
+  parent: onpremVnet
+  name: 'onprem-to-branch1'
+  properties: {
+    remoteVirtualNetwork: {
+      id: branch1Vnet.id
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    useRemoteGateways: false // Will be true after gateway deployed
+  }
+}
+
+// VNet peering: onprem-backend <-> branch2-vpn
+resource branch2ToOnprem 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
+  parent: branch2Vnet
+  name: 'branch2-to-onprem'
+  properties: {
+    remoteVirtualNetwork: {
+      id: onpremVnet.id
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    allowGatewayTransit: true
+  }
+}
+
+resource onpremToBranch2 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
+  parent: onpremVnet
+  name: 'onprem-to-branch2'
+  properties: {
+    remoteVirtualNetwork: {
+      id: branch2Vnet.id
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    useRemoteGateways: false // Will be true after gateway deployed
+  }
+}
+
+// =============================================================================
+// Bastion VNet
+// =============================================================================
+resource bastionVnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: 'bastion-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['10.250.0.0/24']
+    }
+    subnets: [
+      {
+        name: 'AzureBastionSubnet'
+        properties: {
+          addressPrefix: '10.250.0.0/26'
+        }
+      }
+    ]
+  }
+}
+
+// =============================================================================
+// Spoke VNets
+// =============================================================================
+resource spoke1 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: '${hubName}-spoke1'
   location: location
   properties: {
     addressSpace: {
@@ -103,8 +223,8 @@ resource spoke1Hub1 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   }
 }
 
-resource spoke2Hub1 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'hub1-spoke2'
+resource spoke2 'Microsoft.Network/virtualNetworks@2023-11-01' = {
+  name: '${hubName}-spoke2'
   location: location
   properties: {
     addressSpace: {
@@ -121,56 +241,22 @@ resource spoke2Hub1 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   }
 }
 
-resource spoke1Hub2 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'hub2-spoke1'
-  location: location
-  properties: {
-    addressSpace: {
-      addressPrefixes: ['172.16.3.0/24']
-    }
-    subnets: [
-      {
-        name: 'main'
-        properties: {
-          addressPrefix: '172.16.3.0/27'
-        }
-      }
-    ]
-  }
-}
-
-resource spoke2Hub2 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'hub2-spoke2'
-  location: location
-  properties: {
-    addressSpace: {
-      addressPrefixes: ['172.16.4.0/24']
-    }
-    subnets: [
-      {
-        name: 'main'
-        properties: {
-          addressPrefix: '172.16.4.0/27'
-        }
-      }
-    ]
-  }
-}
-
+// =============================================================================
 // NSGs
-resource nsgHub1 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
-  name: 'default-nsg-${hub1Name}-${location}'
+// =============================================================================
+resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
+  name: 'default-nsg-${location}'
   location: location
   properties: {
     securityRules: [
       {
-        name: 'default-allow-ssh'
+        name: 'allow-ssh'
         properties: {
           priority: 100
           direction: 'Inbound'
           access: 'Allow'
           protocol: 'Tcp'
-          sourceAddressPrefix: '*'  // Will be replaced with actual IP
+          sourceAddressPrefix: '*'
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRange: '22'
@@ -184,48 +270,25 @@ resource nsgHub1 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           direction: 'Inbound'
           access: 'Allow'
           protocol: 'Tcp'
-          sourceAddressPrefix: '10.200.0.0/26'
+          sourceAddressPrefix: '10.250.0.0/26'
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
           destinationPortRange: '22'
           description: 'Allow SSH from Bastion'
         }
       }
-    ]
-  }
-}
-
-resource nsgHub2 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
-  name: 'default-nsg-${hub2Name}-${location}'
-  location: location
-  properties: {
-    securityRules: [
       {
-        name: 'default-allow-ssh'
+        name: 'allow-icmp'
         properties: {
-          priority: 100
+          priority: 120
           direction: 'Inbound'
           access: 'Allow'
-          protocol: 'Tcp'
-          sourceAddressPrefix: '*'  // Will be replaced with actual IP
+          protocol: 'Icmp'
+          sourceAddressPrefix: '*'
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '22'
-          description: 'Allow inbound SSH'
-        }
-      }
-      {
-        name: 'allow-bastion-ssh'
-        properties: {
-          priority: 110
-          direction: 'Inbound'
-          access: 'Allow'
-          protocol: 'Tcp'
-          sourceAddressPrefix: '10.200.0.0/26'
-          sourcePortRange: '*'
-          destinationAddressPrefix: '*'
-          destinationPortRange: '22'
-          description: 'Allow SSH from Bastion'
+          destinationPortRange: '*'
+          description: 'Allow ICMP for ping tests'
         }
       }
     ]
@@ -233,114 +296,95 @@ resource nsgHub2 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
 }
 
 // NSG Associations
-resource spoke1Hub1Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: spoke1Hub1
+resource spoke1Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+  parent: spoke1
   name: 'main'
   properties: {
     addressPrefix: '172.16.1.0/27'
     networkSecurityGroup: {
-      id: nsgHub1.id
+      id: nsg.id
     }
   }
 }
 
-resource spoke2Hub1Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: spoke2Hub1
+resource spoke2Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+  parent: spoke2
   name: 'main'
   properties: {
     addressPrefix: '172.16.2.0/27'
     networkSecurityGroup: {
-      id: nsgHub1.id
+      id: nsg.id
     }
   }
 }
 
-resource spoke1Hub2Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: spoke1Hub2
-  name: 'main'
-  properties: {
-    addressPrefix: '172.16.3.0/27'
-    networkSecurityGroup: {
-      id: nsgHub2.id
-    }
-  }
-}
-
-resource spoke2Hub2Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: spoke2Hub2
-  name: 'main'
-  properties: {
-    addressPrefix: '172.16.4.0/27'
-    networkSecurityGroup: {
-      id: nsgHub2.id
-    }
-  }
-}
-
-resource branchNsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: branchVnet
+resource branch1Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+  parent: branch1Vnet
   name: 'main'
   properties: {
     addressPrefix: '10.100.0.0/24'
     networkSecurityGroup: {
-      id: nsgHub1.id
+      id: nsg.id
     }
   }
 }
 
-// Hub connections for spokes
-resource hub1Spoke1Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  parent: hub1
-  name: 'hub1-spoke1-conn'
+resource branch2Nsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+  parent: branch2Vnet
+  name: 'main'
+  properties: {
+    addressPrefix: '10.200.0.0/24'
+    networkSecurityGroup: {
+      id: nsg.id
+    }
+  }
+}
+
+resource onpremNsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+  parent: onpremVnet
+  name: 'main'
+  properties: {
+    addressPrefix: '10.0.1.0/24'
+    networkSecurityGroup: {
+      id: nsg.id
+    }
+  }
+}
+
+// =============================================================================
+// Hub Virtual Network Connections (Spokes)
+// =============================================================================
+resource hubSpoke1Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
+  parent: hub
+  name: 'spoke1-conn'
   properties: {
     remoteVirtualNetwork: {
-      id: spoke1Hub1.id
+      id: spoke1.id
     }
     enableInternetSecurity: true
   }
 }
 
-resource hub1Spoke2Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  parent: hub1
-  name: 'hub1-spoke2-conn'
+resource hubSpoke2Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
+  parent: hub
+  name: 'spoke2-conn'
   properties: {
     remoteVirtualNetwork: {
-      id: spoke2Hub1.id
+      id: spoke2.id
     }
     enableInternetSecurity: true
   }
 }
 
-resource hub2Spoke1Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  parent: hub2
-  name: 'hub2-spoke1-conn'
-  properties: {
-    remoteVirtualNetwork: {
-      id: spoke1Hub2.id
-    }
-    enableInternetSecurity: true
-  }
-}
-
-resource hub2Spoke2Conn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  parent: hub2
-  name: 'hub2-spoke2-conn'
-  properties: {
-    remoteVirtualNetwork: {
-      id: spoke2Hub2.id
-    }
-    enableInternetSecurity: true
-  }
-}
-
+// =============================================================================
+// Outputs
+// =============================================================================
 output vwanId string = vwan.id
-output hub1Id string = hub1.id
-output hub2Id string = hub2.id
-output branchVnetId string = branchVnet.id
+output hubId string = hub.id
+output branch1VnetId string = branch1Vnet.id
+output branch2VnetId string = branch2Vnet.id
+output onpremVnetId string = onpremVnet.id
 output bastionVnetId string = bastionVnet.id
-output spoke1Hub1Id string = spoke1Hub1.id
-output spoke2Hub1Id string = spoke2Hub1.id
-output spoke1Hub2Id string = spoke1Hub2.id
-output spoke2Hub2Id string = spoke2Hub2.id
-output nsgHub1Id string = nsgHub1.id
-output nsgHub2Id string = nsgHub2.id
+output spoke1Id string = spoke1.id
+output spoke2Id string = spoke2.id
+output nsgId string = nsg.id

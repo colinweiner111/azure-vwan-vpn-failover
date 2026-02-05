@@ -1,150 +1,200 @@
-# Azure vWAN Secure Hub Lab (two-region)
+# Azure vWAN ExpressRoute/VPN Failover Lab
 
-> This lab script is based on work by Daniel Mauser (see *Credits & Source* below).
+> **Lab Purpose**: Demonstrate route preference behavior between ExpressRoute and VPN backup connections, specifically the "failback" issue caused by Longest Prefix Match (LPM) when VPN advertises more-specific routes than ExpressRoute.
 
-This repo contains a **Bicep-based deployment** for a two-hub **Virtual WAN** lab with spokes, branch VNets, VPN Gateways, Azure Firewall (Hub), Log Analytics, and Azure Bastion. Intended for **lab/demo** use to validate secured vHub and routing intent scenarios.
+This lab uses **two S2S VPN connections** to simulate ExpressRoute and VPN backup scenarios, making it deployable without actual ExpressRoute circuits.
+
+## Problem Statement
+
+When using ExpressRoute as the primary path and S2S VPN as backup:
+
+1. **Failover works** ✅ — When ExpressRoute goes down, traffic fails over to VPN
+2. **Failback fails** ❌ — When ExpressRoute is restored, traffic stays on VPN
+
+**Root Cause**: If ExpressRoute advertises aggregate prefixes (e.g., `10.0.0.0/16`) and VPN advertises more-specific prefixes (e.g., `10.0.1.0/24`, `10.0.2.0/24`), **Longest Prefix Match (LPM) always selects the VPN route**.
+
+LPM is evaluated before any "prefer ExpressRoute" behavior can help.
 
 ## Architecture
 
-![Lab Architecture](image/vwan-02-lab-01.png)
+```
+                              ┌──────────────────────────────────────┐
+                              │           Azure vWAN                 │
+                              │  ┌────────────────────────────────┐  │
+                              │  │         Secured Hub            │  │
+                              │  │   (Azure Firewall + Routing    │  │
+                              │  │         Intent)                │  │
+                              │  │                                │  │
+                              │  │    VPN Gateway (ASN 65515)     │  │
+                              │  └───────────┬───────────┬────────┘  │
+                              │              │           │           │
+                              │   ┌──────────┴───┐   ┌───┴─────────┐ │
+                              │   │  Spoke1      │   │   Spoke2    │ │
+                              │   │ 172.16.1.0/24│   │172.16.2.0/24│ │
+                              │   │     VM       │   │     VM      │ │
+                              │   └──────────────┘   └─────────────┘ │
+                              └──────────────────────────────────────┘
+                                          │              │
+                    S2S VPN #1            │              │         S2S VPN #2
+                ("ExpressRoute")          │              │        ("VPN Backup")
+                  ASN 65010               │              │          ASN 65020
+                                          │              │
+                ┌─────────────────────────┼──────────────┼────────────────────────┐
+                │                         │              │                        │
+        ┌───────▼───────┐                 │              │              ┌─────────▼─────┐
+        │   Branch1     │                 │              │              │   Branch2     │
+        │  (Sim. ER)    │                 │              │              │ (VPN Backup)  │
+        │ 10.100.0.0/16 │                 │              │              │ 10.200.0.0/16 │
+        │               │                 │              │              │               │
+        │ Advertises:   │                 │              │              │ Advertises:   │
+        │ 10.0.0.0/16   │◄────────────────┼──────────────┼──────────────┤ 10.0.1.0/24   │
+        │ (aggregate)   │                 │              │              │ 10.0.2.0/24   │
+        └───────┬───────┘                 │              │              │(more-specific)│
+                │                         │              │              └───────┬───────┘
+                │                         │              │                      │
+                │         ┌───────────────┴──────────────┴───────────────┐      │
+                │         │                                              │      │
+                └─────────┤           On-Prem Backend                    ├──────┘
+                          │            10.0.0.0/16                       │
+                          │                                              │
+                          │    ┌───────────┐      ┌───────────┐          │
+                          │    │10.0.1.0/24│      │10.0.2.0/24│          │
+                          │    │    VM     │      │  (subnet) │          │
+                          │    │ 10.0.1.10 │      │           │          │
+                          │    └───────────┘      └───────────┘          │
+                          └──────────────────────────────────────────────┘
+```
+
+## Why This Happens
+
+| Route Source | Prefix Advertised | Prefix Length |
+|--------------|-------------------|---------------|
+| Branch1 ("ER") | 10.0.0.0/16 | /16 |
+| Branch2 ("VPN") | 10.0.1.0/24 | /24 |
+
+When traffic is destined for `10.0.1.10`:
+- Both routes match the destination
+- **LPM selects /24 (VPN) over /16 (ER)** — regardless of AS-PATH, Hub Routing Preference, or any other attribute
+
+## The Fix: Route Maps
+
+**Solution**: Apply a Route Map to the VPN connection that either:
+
+1. **Option A — Filter more-specifics**: Deny the `/24` routes learned from VPN
+2. **Option B — Summarize routes**: Aggregate VPN routes to match ER prefix lengths
+
+This ensures prefix lengths are equal, allowing:
+- Hub Routing Preference (ExpressRoute) to take effect
+- AS-PATH prepending to influence route selection
 
 ## Prerequisites
 
-### Requirements
-
-- **PowerShell 7+** — The deployment script uses PowerShell 7+ syntax (ternary operators, null-coalescing). Windows PowerShell 5.1 will fail with parser errors. Install from [https://aka.ms/PSWindows](https://aka.ms/PSWindows) and run scripts using `pwsh` instead of `powershell`.
-- **Azure Subscription** — An active Azure subscription with sufficient quota for the resources deployed
-- **RBAC Role** — One of the following at the subscription or resource group level:
-  - **Owner** — Full access (recommended for lab/demo)
-  - **Contributor** — Can create all resources but cannot assign roles
-- **Azure CLI or Azure PowerShell** — For deployment
-- Logged in and default subscription set:
-  ```powershell
-  az login
-  az account set --subscription "<SUBSCRIPTION_ID>"
-  ```
-
-> 💡 **Note:** This lab deploys Azure Firewall (Premium by default), VPN Gateways, and Bastion Standard — these have hourly costs. See [Cleanup](#cleanup) when done.
-
-## Getting Started
-
-### Clone the Repository
-
-```powershell
-git clone https://github.com/colinweiner111/azure-vwan-secure-hub-lab.git
-cd azure-vwan-secure-hub-lab
-```
+- **PowerShell 7+** — Install from https://aka.ms/PSWindows (run with `pwsh`)
+- **Azure CLI** — Logged in with `az login`
+- **Azure Subscription** with Contributor/Owner access
+- Sufficient quota for: VPN Gateways, Azure Firewall, VMs
 
 ## Deployment
 
-Use the PowerShell deployment script:
-
 ```powershell
-.\deploy-bicep.ps1 -ResourceGroupName <your-rg-name> -Location <region>
+# Clone the repository
+git clone https://github.com/YOUR-USERNAME/vwan-er-vpn-failover-lab.git
+cd vwan-er-vpn-failover-lab
+
+# Deploy the lab (takes ~45-60 minutes)
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3
+
+# Optional: Deploy with Route Maps enabled (to demonstrate the fix)
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -EnableRouteMaps
 ```
 
-Example:
-```powershell
-.\deploy-bicep.ps1 -ResourceGroupName vwan-lab-rg -Location westus3
-```
+## Lab Testing Scenarios
 
-The script will:
-1. Create the resource group
-2. Deploy the Bicep template
-3. Prompt for VM admin password if not provided
+### Scenario 1: Observe LPM Behavior (The Problem)
 
-### Optional Parameters
+1. Connect to `hub1-spoke1-vm` via Azure Bastion (IP-based connection)
+2. Ping the on-prem backend: `ping 10.0.1.10`
+3. Run traceroute: `traceroute 10.0.1.10`
+4. Check effective routes in Azure Portal for the spoke VM NIC
+5. **Expected**: Traffic goes via Branch2 (VPN) even though both connections are active
 
-- `-ResourceGroupName` (required): Name of the resource group
-- `-Location` (optional): Azure region (default: script will prompt)
+### Scenario 2: Failover Test
 
-## What Gets Deployed
+1. In Azure Portal, disable the Branch2 VPN connection (site-branch2-vpn-conn)
+2. Wait for BGP to reconverge (~2-3 minutes)
+3. Re-run `ping` and `traceroute` from spoke VM
+4. **Expected**: Traffic now goes via Branch1 ("ExpressRoute")
 
-- vWAN + two vHubs
-- Two spokes per hub
-- Branch site with VPN Gateway (BGP)
-- Azure Firewall (Hub) + Policy per hub
-- Log Analytics Workspaces + diagnostic settings
-- VM boot diagnostics
-- Routing Intent (Private and Internet) with next hop = Azure Firewall
-- **Azure Bastion — provides browser-based RDP/SSH access to all VMs (both hubs and branch)**
-- **5 Ubuntu VMs:**
-  - branch1-vm (in branch VNet)
-  - hub1-spoke1-vm, hub1-spoke2-vm (in Hub 1 spokes)
-  - hub2-spoke1-vm, hub2-spoke2-vm (in Hub 2 spokes)
+### Scenario 3: Failback Test (The Issue)
 
-## Default Configuration
+1. Re-enable the Branch2 VPN connection
+2. Wait for BGP to reconverge
+3. Re-run `ping` and `traceroute`
+4. **Expected (without fix)**: Traffic stays on Branch2 (VPN) — no automatic failback to "ER"
 
-- **Username**: `azureuser`
-- **Password**: Prompted during deployment (set a strong password)
-- **Regions**: Configured in Bicep parameters
-- **VM Size**: Configured in Bicep parameters
-- **Firewall SKU**: Configured in Bicep parameters
+### Scenario 4: Apply Route Maps (The Fix)
+
+1. Deploy with `-EnableRouteMaps` or manually apply route maps
+2. Associate `filter-vpn-more-specifics` route map with the Branch2 VPN connection:
+   - Portal: vWAN → Hub → VPN (Site to site) → site-branch2-vpn-conn → Edit → Inbound Route Map
+3. Wait for route table to update
+4. **Expected**: Traffic now prefers Branch1 ("ExpressRoute") when both are active
 
 ## VM Network Information
 
-| VM Name | VNet | Subnet Range |
-|---------|------|--------------|
-| branch1-vm | branch1 | 10.100.0.0/24 |
-| hub1-spoke1-vm | hub1-spoke1 | 172.16.1.0/27 |
-| hub1-spoke2-vm | hub1-spoke2 | 172.16.2.0/27 |
-| hub2-spoke1-vm | hub2-spoke1 | 172.16.3.0/27 |
-| hub2-spoke2-vm | hub2-spoke2 | 172.16.4.0/27 |
+| VM Name | VNet | Subnet | Expected IP |
+|---------|------|--------|-------------|
+| branch1-er-vm | branch1-er | main (10.100.0.0/24) | 10.100.0.x |
+| branch2-vpn-vm | branch2-vpn | main (10.200.0.0/24) | 10.200.0.x |
+| onprem-backend-vm | onprem-backend | main (10.0.1.0/24) | 10.0.1.10 |
+| hub1-spoke1-vm | hub1-spoke1 | main (172.16.1.0/27) | 172.16.1.x |
+| hub1-spoke2-vm | hub1-spoke2 | main (172.16.2.0/27) | 172.16.2.x |
 
-*VMs receive dynamic IPs within their respective subnets*
+## Key Azure Concepts Demonstrated
 
-## Accessing VMs via Azure Bastion
+1. **Longest Prefix Match (LPM)** — Always wins over AS-PATH or route preference
+2. **Hub Routing Preference** — Only effective when prefix lengths are equal
+3. **AS-PATH Prepending** — Only effective when prefix lengths are equal
+4. **vWAN Route Maps** — Filter or modify routes learned from VPN connections
+5. **BGP Route Advertisement** — Different prefix lengths cause route selection issues
 
-Azure Bastion provides secure, browser-based RDP/SSH access to Azure VMs without public IPs, aligning with Zero Trust principles and Azure Landing Zone standards.
+## Best Practices for Production
 
-In Azure Virtual WAN with Routing Intent, east-west traffic is forced through Azure Firewall, which breaks the standard Bastion "Connect to VM" flow that assumes direct VNet peering.
+Based on this lab scenario, the recommended approach for ExpressRoute/VPN coexistence:
 
-As a result, Bastion must use **"Connect via IP address"**, explicitly targeting the VM's private IP so traffic can traverse the vWAN routing fabric and firewall as intended.
+1. **Align prefix advertisement** — Same prefix lengths on both paths
+2. **Use vWAN Route Maps** — Filter more-specifics from VPN if needed
+3. **Set Hub Routing Preference to ExpressRoute** — When prefixes are equal
+4. **AS-PATH prepending on VPN** — Additional bias once prefix lengths aligned
+5. **Configure both VPN instances** — For VPN backup resiliency
 
-> ⚠️ **Important — Routing Intent Requirement:**
-> When using a Secured Virtual Hub (vWAN hub with Azure Firewall), the Bastion spoke VNet **must have default route (0.0.0.0/0) propagation disabled** at the virtual network connection level. Without this, Bastion cannot reach the internet for control-plane operations and will fail.
->
-> To configure this:
-> 1. In the Azure portal, navigate to your **Virtual WAN hub → Virtual Network Connections**
-> 2. Select the connection for your Bastion VNet
-> 3. Under **Propagate Default Route**, set to **Disabled**
->
-> See: [Azure Bastion FAQ — Virtual WAN](https://learn.microsoft.com/azure/bastion/bastion-faq#vwan)
-
-> ⚠️ **Firewall Rules:** Your Azure Firewall rules must allow RDP (3389) and/or SSH (22) from the Bastion subnet to the VM subnets.
-
-> **References:**
-> - [Connect to a VM via IP address (Microsoft Docs)](https://learn.microsoft.com/azure/bastion/connect-ip-address) — Official guide for using Bastion's IP-based connection feature (requires Standard SKU)
-> - [Azure Bastion Routing in Virtual WAN (Jose Moreno)](https://blog.cloudtrooper.net/2022/09/17/azure-bastion-routing-in-virtual-wan/) — Deep dive into Bastion placement options and routing behavior in vWAN topologies
-
-### Using Azure Portal (IP-based connection)
-1. Navigate to **Azure Portal → Bastions**
-2. Select **bastion-vnet-bastion**
-3. Under **Connect**, select **Connection Settings**
-4. Choose **Connect via IP address**
-5. Enter the **private IP address** of the target VM (see [VM Network Information](#vm-network-information) or check the VM's network interface)
-6. Enter username: `azureuser`
-7. Enter the password you set during deployment
-8. Click **Connect**
-
-> 💡 **Tip:** Bastion Standard SKU is required for IP-based connections. This lab deploys Standard by default.
+**Important**: For mission-critical workloads, Microsoft recommends **dual ExpressRoute circuits in different peering locations** rather than ExpressRoute + VPN coexistence.
 
 ## Cleanup
 
-When finished, delete the resource group:
 ```powershell
-az group delete -n <your-rg> --yes --no-wait
+az group delete -n vwan-failover-lab --yes --no-wait
 ```
 
-## Credits & Source
+## Cost Considerations
 
-This script is adapted from the excellent work in Daniel Mauser's repository:
-https://github.com/dmauser/azure-virtualwan/tree/main/svh-ri-intra-region
+This lab deploys cost-incurring resources:
+- 3 VPN Gateways (VpnGw1 SKU)
+- 1 Azure Firewall (Standard SKU by default)
+- 1 Azure Bastion (Standard SKU)
+- 5 VMs (Standard_DS1_v2)
 
-Huge thanks to **Daniel Mauser** ([@dmauser](https://github.com/dmauser)) and **Jose Moreno** ([@erjosito](https://github.com/erjosito)) for sharing and maintaining these scenarios and guidance.
+**Delete resources when done testing to avoid ongoing charges.**
 
----
+## References
 
-© MIT Licensed. See `LICENSE`.
+- [Virtual WAN Hub Routing Preference](https://learn.microsoft.com/azure/virtual-wan/about-virtual-hub-routing-preference)
+- [Virtual WAN Route Maps](https://learn.microsoft.com/azure/virtual-wan/route-maps-about)
+- [ExpressRoute and VPN coexistence](https://learn.microsoft.com/azure/expressroute/expressroute-howto-coexist-resource-manager)
+- [BGP Best Path Selection](https://learn.microsoft.com/azure/virtual-wan/virtual-wan-faq#how-does-the-virtual-hub-in-a-virtual-wan-select-the-best-path-for-a-route-from-multiple-hubs)
 
+## Credits
 
+Inspired by real-world customer scenarios and based on the [azure-vwan-secure-hub-lab](https://github.com/colinweiner111/azure-vwan-secure-hub-lab) repository.
+
+© MIT Licensed

@@ -1,7 +1,19 @@
-param location string
-param hub1Name string
+// =============================================================================
+// Bastion Module - Azure Bastion for VM Access
+// =============================================================================
+// Creates:
+// - Bastion NSG with required rules
+// - Bastion Public IP
+// - Azure Bastion (Standard SKU for IP-based connections)
+// - Hub connection for Bastion VNet
+// =============================================================================
 
+param location string
+param hubName string
+
+// =============================================================================
 // Bastion NSG
+// =============================================================================
 resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: 'bastion-nsg'
   location: location
@@ -48,6 +60,19 @@ resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
             '8080'
             '5701'
           ]
+        }
+      }
+      {
+        name: 'AllowAzureLoadBalancer'
+        properties: {
+          priority: 130
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: 'AzureLoadBalancer'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
         }
       }
       // Outbound rules
@@ -106,33 +131,39 @@ resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           sourceAddressPrefix: '*'
           sourcePortRange: '*'
           destinationAddressPrefix: 'Internet'
-          destinationPortRange: '80'
+          destinationPortRanges: [
+            '80'
+            '443'
+          ]
         }
       }
     ]
   }
 }
 
-// Reference existing Bastion VNET
+// =============================================================================
+// Update Bastion VNet subnet with NSG
+// =============================================================================
 resource bastionVnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
   name: 'bastion-vnet'
 }
 
-// Attach NSG to AzureBastionSubnet
-resource bastionSubnetNsgAttachment 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
+resource bastionSubnetNsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
   parent: bastionVnet
   name: 'AzureBastionSubnet'
   properties: {
-    addressPrefix: '10.200.0.0/26'
+    addressPrefix: '10.250.0.0/26'
     networkSecurityGroup: {
       id: bastionNsg.id
     }
   }
 }
 
+// =============================================================================
 // Bastion Public IP
+// =============================================================================
 resource bastionPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
-  name: 'Bastion-PIP'
+  name: 'bastion-pip'
   location: location
   sku: {
     name: 'Standard'
@@ -142,21 +173,24 @@ resource bastionPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   }
 }
 
-// Azure Bastion Host
+// =============================================================================
+// Azure Bastion
+// =============================================================================
 resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
-  name: 'SharedBastion'
+  name: 'bastion-vnet-bastion'
   location: location
   sku: {
-    name: 'Standard'
+    name: 'Standard'  // Required for IP-based connections
   }
   properties: {
-    enableIpConnect: true
+    enableTunneling: true  // Required for native client support
+    enableIpConnect: true  // Required for IP-based connections
     ipConfigurations: [
       {
         name: 'IpConf'
         properties: {
           subnet: {
-            id: bastionSubnetNsgAttachment.id
+            id: bastionSubnetNsg.id
           }
           publicIPAddress: {
             id: bastionPip.id
@@ -167,20 +201,44 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
   }
 }
 
-// Bastion VNET connection to Hub1 WITHOUT internet security
-resource bastionHubConnection 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  name: '${hub1Name}/bastion-vnet-conn'
+// =============================================================================
+// Hub Connection for Bastion VNet
+// Note: propagateDefaultRoute must be disabled for Bastion to work with
+// Routing Intent (secured hub). This is a vWAN requirement.
+// =============================================================================
+resource hub 'Microsoft.Network/virtualHubs@2023-11-01' existing = {
+  name: hubName
+}
+
+resource bastionHubConn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
+  parent: hub
+  name: 'bastion-vnet-conn'
   properties: {
     remoteVirtualNetwork: {
       id: bastionVnet.id
     }
-    enableInternetSecurity: false
+    enableInternetSecurity: false  // Don't route internet through firewall
+    routingConfiguration: {
+      propagatedRouteTables: {
+        ids: [
+          {
+            id: '${hub.id}/hubRouteTables/defaultRouteTable'
+          }
+        ]
+        labels: [
+          'default'
+        ]
+      }
+      vnetRoutes: {
+        staticRoutes: []
+      }
+    }
   }
-  dependsOn: [
-    bastion
-  ]
 }
 
+// =============================================================================
+// Outputs
+// =============================================================================
 output bastionId string = bastion.id
 output bastionName string = bastion.name
-output bastionNsgId string = bastionNsg.id
+output bastionPipId string = bastionPip.id
