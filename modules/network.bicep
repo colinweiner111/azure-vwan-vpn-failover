@@ -139,6 +139,10 @@ resource branch1ToOnprem 'Microsoft.Network/virtualNetworks/virtualNetworkPeerin
     allowForwardedTraffic: true
     allowGatewayTransit: true
   }
+  dependsOn: [
+    branch1Nsg
+    onpremNsg
+  ]
 }
 
 resource onpremToBranch1 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
@@ -152,6 +156,9 @@ resource onpremToBranch1 'Microsoft.Network/virtualNetworks/virtualNetworkPeerin
     allowForwardedTraffic: true
     useRemoteGateways: false // Will be true after gateway deployed
   }
+  dependsOn: [
+    branch1ToOnprem
+  ]
 }
 
 // VNet peering: onprem-backend <-> branch2-vpn
@@ -166,6 +173,11 @@ resource branch2ToOnprem 'Microsoft.Network/virtualNetworks/virtualNetworkPeerin
     allowForwardedTraffic: true
     allowGatewayTransit: true
   }
+  dependsOn: [
+    branch2Nsg
+    onpremNsg
+    onpremToBranch1  // Serialize peerings to avoid concurrent updates
+  ]
 }
 
 resource onpremToBranch2 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-11-01' = {
@@ -179,6 +191,9 @@ resource onpremToBranch2 'Microsoft.Network/virtualNetworks/virtualNetworkPeerin
     allowForwardedTraffic: true
     useRemoteGateways: false // Will be true after gateway deployed
   }
+  dependsOn: [
+    branch2ToOnprem
+  ]
 }
 
 // =============================================================================
