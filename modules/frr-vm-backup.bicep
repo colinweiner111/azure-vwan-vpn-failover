@@ -178,6 +178,7 @@ write_files:
         neighbor {3} remote-as 65515
         neighbor {3} ebgp-multihop 64
         neighbor {3} update-source __LOCAL_IP__
+        neighbor {3} timers 3 9
         neighbor {3} description VPN-BACKUP
         !
         address-family ipv4 unicast
