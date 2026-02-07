@@ -178,12 +178,14 @@ After deployment, note these key values:
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
-1. Deploy Route Maps (incremental - only adds route maps, doesn't redeploy existing resources):
+1. Run the quick Route Maps script (~30 seconds):
    ```powershell
-   .\deploy-bicep.ps1 -ResourceGroupName "vwan-failover-lab_rg" -Location westus3 -AdminPassword "YourPassword" -VpnPsk "YourPsk" -EnableRouteMaps
+   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab_rg" -HubName "hub1"
    ```
-2. Associate route map with the vpn-backup connection in Portal
-3. **Expected**: Traffic now prefers the ER-PATH when both tunnels are active
+2. In Azure Portal, associate the route map with the vpn-backup connection:
+   - Virtual WAN → hub1 → VPN (Site to site) → conn-vpn-backup
+   - Set Inbound Route Map to `filter-vpn-specifics`
+3. **Expected**: The /24 routes are filtered, traffic now prefers ER-PATH
 
 ## FRR Router Commands
 
