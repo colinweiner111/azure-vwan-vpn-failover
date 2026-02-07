@@ -2,7 +2,7 @@
 
 > **Lab Purpose**: Demonstrate route preference behavior between ExpressRoute and VPN backup connections, specifically the "failback" issue caused by Longest Prefix Match (LPM) when VPN advertises more-specific routes than ExpressRoute.
 
-This lab uses **two S2S VPN connections** to simulate ExpressRoute and VPN backup scenarios, making it deployable without actual ExpressRoute circuits.
+This lab uses **two on-prem FRRouting/strongSwan VMs** with dedicated IPsec tunnels to simulate ExpressRoute and VPN backup scenarios, making it deployable without actual ExpressRoute circuits.
 
 ## Problem Statement
 
@@ -26,53 +26,53 @@ LPM is evaluated before any "prefer ExpressRoute" behavior can help.
                               │  │         Intent)                │  │
                               │  │                                │  │
                               │  │    VPN Gateway (ASN 65515)     │  │
-                              │  └───────────┬───────────┬────────┘  │
-                              │              │           │           │
-                              │   ┌──────────┴───┐   ┌───┴─────────┐ │
-                              │   │  Spoke1      │   │   Spoke2    │ │
-                              │   │ 172.16.1.0/24│   │172.16.2.0/24│ │
-                              │   │     VM       │   │     VM      │ │
-                              │   └──────────────┘   └─────────────┘ │
+                              │  │     Instance 0   Instance 1    │  │
+                              │  └────────┬─────────────┬─────────┘  │
+                              │           │             │            │
+                              │   er-path-site    vpn-backup-site   │
+                              │   (conn-er-path)  (conn-vpn-backup)  │
+                              │           │             │            │
+                              └───────────┼─────────────┼────────────┘
+                                          │             │
+                  BGP: 10.0.0.0/16        │             │       BGP: 10.0.1.0/24
+                    (aggregate)           │             │            10.0.2.0/24
+                                          │             │          (more-specific)
+                                  IPsec Tunnel      IPsec Tunnel
+                                          │             │
+                              ┌───────────┴─────────────┴────────────┐
+                              │                                      │
+                              │        On-Prem VNet (10.0.0.0/16)    │
+                              │                                      │
+                              │   ┌────────────┐   ┌────────────┐    │
+                              │   │ frr-router │   │frr-router- │    │
+                              │   │ (ER-PATH)  │   │  backup    │    │
+                              │   │            │   │(VPN-BACKUP)│    │
+                              │   │ ASN 65001  │   │ ASN 65001  │    │
+                              │   │            │   │            │    │
+                              │   │ Advertises │   │ Advertises │    │
+                              │   │10.0.0.0/16 │   │10.0.1.0/24 │    │
+                              │   │            │   │10.0.2.0/24 │    │
+                              │   └────────────┘   └────────────┘    │
+                              │                                      │
+
                               └──────────────────────────────────────┘
-                                          │              │
-                    S2S VPN #1            │              │         S2S VPN #2
-                ("ExpressRoute")          │              │        ("VPN Backup")
-                  ASN 65010               │              │          ASN 65020
-                                          │              │
-                ┌─────────────────────────┼──────────────┼────────────────────────┐
-                │                         │              │                        │
-        ┌───────▼───────┐                 │              │              ┌─────────▼─────┐
-        │   Branch1     │                 │              │              │   Branch2     │
-        │  (Sim. ER)    │                 │              │              │ (VPN Backup)  │
-        │ 10.100.0.0/16 │                 │              │              │ 10.200.0.0/16 │
-        │               │                 │              │              │               │
-        │ Advertises:   │                 │              │              │ Advertises:   │
-        │ 10.0.0.0/16   │◄────────────────┼──────────────┼──────────────┤ 10.0.1.0/24   │
-        │ (aggregate)   │                 │              │              │ 10.0.2.0/24   │
-        └───────┬───────┘                 │              │              │(more-specific)│
-                │                         │              │              └───────┬───────┘
-                │                         │              │                      │
-                │         ┌───────────────┴──────────────┴───────────────┐      │
-                │         │                                              │      │
-                └─────────┤           On-Prem Backend                    ├──────┘
-                          │            10.0.0.0/16                       │
-                          │                                              │
-                          │    ┌───────────┐      ┌───────────┐          │
-                          │    │10.0.1.0/24│      │10.0.2.0/24│          │
-                          │    │    VM     │      │  (subnet) │          │
-                          │    │ 10.0.1.10 │      │           │          │
-                          │    └───────────┘      └───────────┘          │
-                          └──────────────────────────────────────────────┘
 ```
+
+## Why Two VMs?
+
+Using separate VMs for each tunnel avoids Linux XFRM (IPsec policy) conflicts that occur when multiple tunnels have overlapping traffic selectors on the same host. Each VM has its own dedicated:
+- Public IP
+- IPsec tunnel to a specific VPN Gateway instance
+- BGP session with distinct route advertisements
 
 ## Why This Happens
 
 | Route Source | Prefix Advertised | Prefix Length |
 |--------------|-------------------|---------------|
-| Branch1 ("ER") | 10.0.0.0/16 | /16 |
-| Branch2 ("VPN") | 10.0.1.0/24 | /24 |
+| Tunnel 0 ("ER") | 10.0.0.0/16 | /16 |
+| Tunnel 1 ("VPN") | 10.0.1.0/24, 10.0.2.0/24 | /24 |
 
-When traffic is destined for `10.0.1.10`:
+When traffic is destined for `10.0.1.x`:
 - Both routes match the destination
 - **LPM selects /24 (VPN) over /16 (ER)** — regardless of AS-PATH, Hub Routing Preference, or any other attribute
 
@@ -92,7 +92,7 @@ This ensures prefix lengths are equal, allowing:
 - **PowerShell 7+** — Install from https://aka.ms/PSWindows (run with `pwsh`)
 - **Azure CLI** — Logged in with `az login`
 - **Azure Subscription** with Contributor/Owner access
-- Sufficient quota for: VPN Gateways, Azure Firewall, VMs
+- Sufficient quota for: VPN Gateway (vWAN), Azure Firewall, VMs, Public IPs
 
 ## Deployment
 
@@ -101,54 +101,125 @@ This ensures prefix lengths are equal, allowing:
 git clone https://github.com/YOUR-USERNAME/vwan-er-vpn-failover-lab.git
 cd vwan-er-vpn-failover-lab
 
-# Deploy the lab (takes ~45-60 minutes)
-.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3
+# Deploy the lab (takes ~40 minutes without optional components)
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -VpnPsk "YourPreSharedKey123!"
+
+# Optional: Deploy with Azure Bastion for VM access (adds ~5 min)
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -VpnPsk "YourPreSharedKey123!" -EnableBastion
+
+# Optional: Deploy with Azure Firewall (adds ~15 min)
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -VpnPsk "YourPreSharedKey123!" -EnableFirewall
 
 # Optional: Deploy with Route Maps enabled (to demonstrate the fix)
-.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -EnableRouteMaps
+.\deploy-bicep.ps1 -ResourceGroupName vwan-failover-lab -Location westus3 -VpnPsk "YourPreSharedKey123!" -EnableRouteMaps
 ```
+
+### Default Credentials
+
+| Setting | Value |
+|---------|-------|
+| VM Username | `azureuser` |
+| VM Password | (prompted during deployment or via `-AdminPassword`) |
+| VPN PSK | (provided via `-VpnPsk` parameter) |
+
+### Deployment Outputs
+
+After deployment, note these key values:
+
+| Resource | Output Name | Description |
+|----------|-------------|-------------|
+| frr-router | `frrVmPublicIp` | SSH to ER-PATH VM |
+| frr-router-backup | `frrVmBackupPublicIp` | SSH to VPN-BACKUP VM |
+| VPN GW Instance 0 | `hubVpnGwPublicIp0` | ER-PATH tunnel endpoint |
+| VPN GW Instance 1 | `hubVpnGwPublicIp1` | VPN-BACKUP tunnel endpoint |
+
+**BGP Peer IPs** (check with `az network vpn-gateway show`):
+- Instance 0: typically `192.168.1.13` (ER-PATH)
+- Instance 1: typically `192.168.1.12` (VPN-BACKUP)
 
 ## Lab Testing Scenarios
 
 ### Scenario 1: Observe LPM Behavior (The Problem)
 
-1. Connect to `hub1-spoke1-vm` via Azure Bastion (IP-based connection)
-2. Ping the on-prem backend: `ping 10.0.1.10`
-3. Run traceroute: `traceroute 10.0.1.10`
-4. Check effective routes in Azure Portal for the spoke VM NIC
-5. **Expected**: Traffic goes via Branch2 (VPN) even though both connections are active
+1. SSH to both FRR routers (IPs shown in deployment output)
+2. Verify BGP sessions on each:
+   ```bash
+   # On frr-router (ER-PATH)
+   sudo vtysh -c "show ip bgp summary"
+   sudo vtysh -c "show ip bgp neighbors 192.168.1.13 advertised-routes"
+   
+   # On frr-router-backup (VPN-BACKUP)
+   sudo vtysh -c "show ip bgp summary"
+   sudo vtysh -c "show ip bgp neighbors 192.168.1.12 advertised-routes"
+   ```
+3. Check vWAN effective routes in Azure Portal:
+   - Navigate to **Virtual WAN** → **hub1** → **Routing** → **Effective Routes**
+4. **Expected**: The /24 routes from VPN-BACKUP are preferred for 10.0.1.x and 10.0.2.x due to LPM
 
 ### Scenario 2: Failover Test
 
-1. In Azure Portal, disable the Branch2 VPN connection (site-branch2-vpn-conn)
-2. Wait for BGP to reconverge (~2-3 minutes)
-3. Re-run `ping` and `traceroute` from spoke VM
-4. **Expected**: Traffic now goes via Branch1 ("ExpressRoute")
+1. On `frr-router-backup`, disable the VPN-BACKUP tunnel:
+   ```bash
+   sudo ipsec down vpn-backup
+   ```
+2. Wait for BGP to reconverge (~1-2 minutes)
+3. Check vWAN effective routes in Portal
+4. **Expected**: Traffic now uses the /16 route via ER-PATH (frr-router)
 
 ### Scenario 3: Failback Test (The Issue)
 
-1. Re-enable the Branch2 VPN connection
+1. Re-enable the VPN-BACKUP tunnel:
+   ```bash
+   sudo ipsec up vpn-backup
+   ```
 2. Wait for BGP to reconverge
-3. Re-run `ping` and `traceroute`
-4. **Expected (without fix)**: Traffic stays on Branch2 (VPN) — no automatic failback to "ER"
+3. Check vWAN routes
+4. **Expected (without fix)**: /24 routes return and win due to LPM — no automatic failback to "ER"
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
 1. Deploy with `-EnableRouteMaps` or manually apply route maps
-2. Associate `filter-vpn-more-specifics` route map with the Branch2 VPN connection:
-   - Portal: vWAN → Hub → VPN (Site to site) → site-branch2-vpn-conn → Edit → Inbound Route Map
-3. Wait for route table to update
-4. **Expected**: Traffic now prefers Branch1 ("ExpressRoute") when both are active
+2. Associate route map with the vpn-backup connection in Portal
+3. **Expected**: Traffic now prefers the ER-PATH when both tunnels are active
 
-## VM Network Information
+## FRR Router Commands
 
-| VM Name | VNet | Subnet | Expected IP |
-|---------|------|--------|-------------|
-| branch1-er-vm | branch1-er | main (10.100.0.0/24) | 10.100.0.x |
-| branch2-vpn-vm | branch2-vpn | main (10.200.0.0/24) | 10.200.0.x |
-| onprem-backend-vm | onprem-backend | main (10.0.1.0/24) | 10.0.1.10 |
-| hub1-spoke1-vm | hub1-spoke1 | main (172.16.1.0/27) | 172.16.1.x |
-| hub1-spoke2-vm | hub1-spoke2 | main (172.16.2.0/27) | 172.16.2.x |
+Connect via SSH:
+```bash
+# ER-PATH VM (check deployment output for IP)
+ssh azureuser@<frr-router-public-ip>
+
+# VPN-BACKUP VM (check deployment output for IP)
+ssh azureuser@<frr-router-backup-public-ip>
+```
+
+Common commands:
+```bash
+# Show BGP summary
+sudo vtysh -c "show ip bgp summary"
+
+# Show BGP neighbors
+sudo vtysh -c "show ip bgp neighbors"
+
+# Show routes advertised to specific neighbor
+sudo vtysh -c "show ip bgp neighbors <bgp-peer-ip> advertised-routes"
+
+# Show routes received from neighbor
+sudo vtysh -c "show ip bgp neighbors <bgp-peer-ip> received-routes"
+
+# Show all BGP routes
+sudo vtysh -c "show ip bgp"
+
+# Show IPsec tunnel status
+sudo ipsec status
+sudo ipsec statusall
+
+# Restart IPsec tunnel
+sudo ipsec restart
+
+# View FRR configuration
+sudo vtysh -c "show running-config"
+```
 
 ## Key Azure Concepts Demonstrated
 
@@ -156,7 +227,7 @@ cd vwan-er-vpn-failover-lab
 2. **Hub Routing Preference** — Only effective when prefix lengths are equal
 3. **AS-PATH Prepending** — Only effective when prefix lengths are equal
 4. **vWAN Route Maps** — Filter or modify routes learned from VPN connections
-5. **BGP Route Advertisement** — Different prefix lengths cause route selection issues
+5. **Per-neighbor BGP Policies** — Different routes advertised per BGP peer (via FRRouting)
 
 ## Best Practices for Production
 
@@ -179,10 +250,12 @@ az group delete -n vwan-failover-lab --yes --no-wait
 ## Cost Considerations
 
 This lab deploys cost-incurring resources:
-- 3 VPN Gateways (VpnGw1 SKU)
-- 1 Azure Firewall (Standard SKU by default)
-- 1 Azure Bastion (Standard SKU)
-- 5 VMs (Standard_DS1_v2)
+- 1 vWAN VPN Gateway
+- 1 Azure Firewall (optional, disabled by default)
+- 1 Azure Bastion (optional, disabled by default)
+- 2 Linux VMs (Standard_B2s) - frr-router and frr-router-backup
+- 3 Workload VMs (Standard_B2s) - onprem-vm, spoke1-vm, spoke2-vm
+- 2 Spoke VNets connected to vWAN Hub
 
 **Delete resources when done testing to avoid ongoing charges.**
 
@@ -191,10 +264,11 @@ This lab deploys cost-incurring resources:
 - [Virtual WAN Hub Routing Preference](https://learn.microsoft.com/azure/virtual-wan/about-virtual-hub-routing-preference)
 - [Virtual WAN Route Maps](https://learn.microsoft.com/azure/virtual-wan/route-maps-about)
 - [ExpressRoute and VPN coexistence](https://learn.microsoft.com/azure/expressroute/expressroute-howto-coexist-resource-manager)
-- [BGP Best Path Selection](https://learn.microsoft.com/azure/virtual-wan/virtual-wan-faq#how-does-the-virtual-hub-in-a-virtual-wan-select-the-best-path-for-a-route-from-multiple-hubs)
+- [FRRouting Documentation](https://docs.frrouting.org/)
+- [strongSwan Documentation](https://docs.strongswan.org/)
 
 ## Credits
 
-Inspired by real-world customer scenarios and based on the [azure-vwan-secure-hub-lab](https://github.com/colinweiner111/azure-vwan-secure-hub-lab) repository.
+Inspired by real-world customer scenarios demonstrating LPM behavior with ExpressRoute/VPN failover.
 
 © MIT Licensed

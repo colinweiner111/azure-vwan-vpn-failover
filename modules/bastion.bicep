@@ -5,11 +5,10 @@
 // - Bastion NSG with required rules
 // - Bastion Public IP
 // - Azure Bastion (Standard SKU for IP-based connections)
-// - Hub connection for Bastion VNet
 // =============================================================================
 
 param location string
-param hubName string
+param vnetName string
 
 // =============================================================================
 // Bastion NSG
@@ -142,17 +141,17 @@ resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
 }
 
 // =============================================================================
-// Update Bastion VNet subnet with NSG
+// Get existing on-prem VNet and update Bastion subnet with NSG
 // =============================================================================
-resource bastionVnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
-  name: 'bastion-vnet'
+resource onpremVnet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: vnetName
 }
 
 resource bastionSubnetNsg 'Microsoft.Network/virtualNetworks/subnets@2023-11-01' = {
-  parent: bastionVnet
+  parent: onpremVnet
   name: 'AzureBastionSubnet'
   properties: {
-    addressPrefix: '10.250.0.0/26'
+    addressPrefix: '10.0.255.0/27'
     networkSecurityGroup: {
       id: bastionNsg.id
     }
@@ -177,7 +176,7 @@ resource bastionPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
 // Azure Bastion
 // =============================================================================
 resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
-  name: 'bastion-vnet-bastion'
+  name: 'onprem-bastion'
   location: location
   sku: {
     name: 'Standard'  // Required for IP-based connections
@@ -198,41 +197,6 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
         }
       }
     ]
-  }
-}
-
-// =============================================================================
-// Hub Connection for Bastion VNet
-// Note: propagateDefaultRoute must be disabled for Bastion to work with
-// Routing Intent (secured hub). This is a vWAN requirement.
-// =============================================================================
-resource hub 'Microsoft.Network/virtualHubs@2023-11-01' existing = {
-  name: hubName
-}
-
-resource bastionHubConn 'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections@2023-11-01' = {
-  parent: hub
-  name: 'bastion-vnet-conn'
-  properties: {
-    remoteVirtualNetwork: {
-      id: bastionVnet.id
-    }
-    enableInternetSecurity: false  // Don't route internet through firewall
-    routingConfiguration: {
-      propagatedRouteTables: {
-        ids: [
-          {
-            id: '${hub.id}/hubRouteTables/defaultRouteTable'
-          }
-        ]
-        labels: [
-          'default'
-        ]
-      }
-      vnetRoutes: {
-        staticRoutes: []
-      }
-    }
   }
 }
 

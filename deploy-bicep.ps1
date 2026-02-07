@@ -1,8 +1,9 @@
 # =============================================================================
 # vWAN ExpressRoute/VPN Failover Lab - Deployment Script
 # =============================================================================
-# This lab demonstrates route preference behavior between two S2S VPN
-# connections simulating ExpressRoute (preferred) and VPN backup scenarios.
+# This lab demonstrates route preference behavior using a single on-prem
+# FRRouting/strongSwan VM with two IPsec tunnels to simulate ExpressRoute
+# (preferred) and VPN backup scenarios.
 #
 # REQUIREMENTS: PowerShell 7+ (run with 'pwsh', not 'powershell')
 # =============================================================================
@@ -21,8 +22,17 @@ param(
     [string]$AdminPassword,
     
     [Parameter(Mandatory=$false)]
+    [string]$VpnPsk,
+    
+    [Parameter(Mandatory=$false)]
     [ValidateSet('Standard', 'Premium')]
     [string]$FirewallSku = "Standard",
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableFirewall = $false,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableBastion = $false,
 
     [Parameter(Mandatory=$false)]
     [switch]$EnableRouteMaps = $false
@@ -54,6 +64,13 @@ if (-not $AdminPassword) {
     $AdminPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
 }
 
+# Prompt for VPN PSK if not provided
+if (-not $VpnPsk) {
+    $SecurePsk = Read-Host -Prompt "Enter VPN Pre-Shared Key" -AsSecureString
+    $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePsk)
+    $VpnPsk = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+}
+
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "vWAN ExpressRoute/VPN Failover Lab" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
@@ -62,29 +79,39 @@ Write-Host "`nDeployment Parameters:" -ForegroundColor Yellow
 Write-Host "  Resource Group: $ResourceGroupName"
 Write-Host "  Location: $Location"
 Write-Host "  Admin Username: $AdminUsername"
-Write-Host "  Firewall SKU: $FirewallSku"
-Write-Host "  Enable Route Maps: $EnableRouteMaps"
+Write-Host "  Firewall: $(if ($EnableFirewall) { $FirewallSku } else { 'Disabled' })"
+Write-Host "  Bastion: $(if ($EnableBastion) { 'Enabled' } else { 'Disabled' })"
+Write-Host "  Route Maps: $EnableRouteMaps"
 
 Write-Host "`nLab Architecture:" -ForegroundColor Yellow
-Write-Host "  - Branch1 ('Simulated ExpressRoute'): Advertises 10.0.0.0/16 aggregate"
-Write-Host "  - Branch2 ('VPN Backup'): Advertises 10.0.1.0/24, 10.0.2.0/24 more-specifics"
-Write-Host "  - Hub with Azure Firewall and Routing Intent"
-Write-Host "  - On-Prem Backend network (shared destination for testing)"
-Write-Host "  - 2 Spoke VNets with test VMs"
+Write-Host "  - Dual FRR VMs with dedicated IPsec tunnels to vWAN VPN Gateway:"
+Write-Host "    * frr-router (ER-PATH): Tunnel to Instance0, advertises 10.0.0.0/16"
+Write-Host "    * frr-router-backup (VPN): Tunnel to Instance1, advertises /24 specifics"
+Write-Host "  - LPM causes /24 routes to win over /16 aggregate"
+Write-Host "  - Demonstrates failover/failback behavior"
 
 Write-Host "`nComponents to deploy:" -ForegroundColor Cyan
-Write-Host "  - Virtual WAN with 1 secure hub"
-Write-Host "  - 6 Virtual Networks (2 Branch, 1 On-Prem, 1 Bastion, 2 Spokes)"
-Write-Host "  - 5 Ubuntu VMs (Branch1, Branch2, On-Prem, Spoke1, Spoke2)"
-Write-Host "  - 3 VPN Gateways (Branch1, Branch2, Hub)"
-Write-Host "  - Azure Firewall with Routing Intent"
-Write-Host "  - Azure Bastion for VM access"
+Write-Host "  - Virtual WAN with Hub"
+Write-Host "  - On-Prem VNet (10.0.0.0/16)"
+Write-Host "  - 2 FRR/strongSwan Router VMs (Ubuntu)"
+Write-Host "  - vWAN VPN Gateway (2 instances)"
+if ($EnableBastion) {
+    Write-Host "  - Azure Bastion for VM access"
+}
+if ($EnableFirewall) {
+    Write-Host "  - Azure Firewall ($FirewallSku SKU)" -ForegroundColor Yellow
+}
 if ($EnableRouteMaps) {
     Write-Host "  - Route Maps (for demonstrating the fix)" -ForegroundColor Green
 }
 
-Write-Host "`nEstimated deployment time: 45-60 minutes" -ForegroundColor Yellow
-Write-Host "  (VPN Gateway provisioning takes ~30 minutes each)`n"
+$extraTime = 0
+if ($EnableFirewall) { $extraTime += 15 }
+if ($EnableBastion) { $extraTime += 5 }
+$estimatedMin = 30 + $extraTime
+$estimatedMax = 40 + $extraTime
+Write-Host "`nEstimated deployment time: $estimatedMin-$estimatedMax minutes" -ForegroundColor Yellow
+Write-Host "  (VPN Gateway: ~30 min)`n"
 
 $deploymentName = "vwan-failover-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
@@ -99,7 +126,10 @@ try {
                      location=$Location `
                      adminUsername=$AdminUsername `
                      adminPassword=$AdminPassword `
+                     vpnPsk=$VpnPsk `
                      firewallSku=$FirewallSku `
+                     enableFirewall=$($EnableFirewall.ToString().ToLower()) `
+                     enableBastion=$($EnableBastion.ToString().ToLower()) `
                      enableRouteMaps=$($EnableRouteMaps.ToString().ToLower())
     
     if ($LASTEXITCODE -eq 0) {
@@ -109,27 +139,34 @@ try {
         Write-Host "Lab Testing Instructions" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
         
-        Write-Host "`nVM IP Addresses:" -ForegroundColor Yellow
-        Write-Host "  branch1-er-vm:      10.100.0.x (Branch1 - 'ExpressRoute')"
-        Write-Host "  branch2-vpn-vm:     10.200.0.x (Branch2 - 'VPN Backup')"
-        Write-Host "  onprem-backend-vm:  10.0.1.10  (Shared on-prem destination)"
-        Write-Host "  hub1-spoke1-vm:     172.16.1.x (Azure workload)"
-        Write-Host "  hub1-spoke2-vm:     172.16.2.x (Azure workload)"
+        Write-Host "`nFRR Router VMs:" -ForegroundColor Yellow
+        Write-Host "  frr-router (ER-PATH):     10.0.0.4, BGP peer Instance0 (192.168.1.13)"
+        Write-Host "  frr-router-backup (VPN):  10.0.0.5, BGP peer Instance1 (192.168.1.12)"
+        if ($EnableBastion) {
+            Write-Host "  Access: Azure Bastion in onprem-vnet"
+        } else {
+            Write-Host "  Access: SSH to public IP (see deployment outputs)"
+        }
+        
+        Write-Host "`nUseful FRR Commands:" -ForegroundColor Yellow
+        Write-Host "  sudo vtysh -c 'show ip bgp summary'       # BGP status"
+        Write-Host "  sudo vtysh -c 'show ip bgp'               # BGP routes"
+        Write-Host "  sudo ipsec status                         # IPsec tunnel status"
         
         Write-Host "`nTest Scenario:" -ForegroundColor Yellow
-        Write-Host "1. Connect to hub1-spoke1-vm via Bastion"
-        Write-Host "2. Ping 10.0.1.10 (on-prem backend) and observe route via traceroute"
-        Write-Host "3. Check effective routes in Azure Portal - note the next hop"
-        Write-Host "4. Observe that traffic goes via Branch2 (VPN) due to more-specific /24 routes"
-        Write-Host "5. Shut down Branch2 VPN connection - traffic should fail over to Branch1"
-        Write-Host "6. Restore Branch2 VPN - traffic stays on VPN (failback issue!)"
+        Write-Host "1. Connect to each FRR VM (SSH or Bastion)"
+        Write-Host "2. Verify IPsec tunnels up: sudo ipsec status"
+        Write-Host "3. Verify BGP sessions up: sudo vtysh -c 'show ip bgp summary'"
+        Write-Host "4. Check vWAN effective routes in Azure Portal"
+        Write-Host "5. Observe /24 routes (VPN) win over /16 (ER) due to LPM"
+        Write-Host "6. Disable VPN tunnel: sudo ipsec down azure-vwan (on backup VM)"
+        Write-Host "7. Traffic fails over to ER path (/16 route)"
+        Write-Host "8. Re-enable VPN tunnel: sudo ipsec up azure-vwan"
+        Write-Host "9. Traffic stays on ER path (failback issue!)"
         
         if ($EnableRouteMaps) {
             Write-Host "`nRoute Maps Deployed:" -ForegroundColor Green
-            Write-Host "  - filter-vpn-more-specifics: Denies /24 routes from VPN"
-            Write-Host "  - prepend-vpn-routes: Prepends AS-PATH to VPN routes"
-            Write-Host "`n  Apply the route map to the Branch2 VPN connection to fix failback:"
-            Write-Host "  Portal: vWAN > Hub > VPN > site-branch2-vpn-conn > Inbound Route Map"
+            Write-Host "  Apply to the VPN backup connection to fix failback"
         }
         else {
             Write-Host "`nTo deploy Route Maps (the fix):" -ForegroundColor Yellow
@@ -149,7 +186,8 @@ catch {
     exit 1
 }
 finally {
-    # Clear password from memory
+    # Clear sensitive data from memory
     $AdminPassword = $null
+    $VpnPsk = $null
     [System.GC]::Collect()
 }
