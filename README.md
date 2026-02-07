@@ -247,18 +247,6 @@ Based on this lab scenario, the recommended approach for ExpressRoute/VPN coexis
 az group delete -n vwan-failover-lab --yes --no-wait
 ```
 
-## Cost Considerations
-
-This lab deploys cost-incurring resources:
-- 1 vWAN VPN Gateway
-- 1 Azure Firewall (optional, disabled by default)
-- 1 Azure Bastion (optional, disabled by default)
-- 2 Linux VMs (Standard_B2s) - frr-router and frr-router-backup
-- 3 Workload VMs (Standard_B2s) - onprem-vm, spoke1-vm, spoke2-vm
-- 2 Spoke VNets connected to vWAN Hub
-
-**Delete resources when done testing to avoid ongoing charges.**
-
 ## References
 
 - [Virtual WAN Hub Routing Preference](https://learn.microsoft.com/azure/virtual-wan/about-virtual-hub-routing-preference)
