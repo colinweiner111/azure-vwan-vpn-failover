@@ -20,31 +20,37 @@ Write-Host "  Hub: $HubName"
 # Create Route Map that filters /24 routes from VPN backup
 Write-Host "`nCreating Route Map 'filter-vpn-specifics'..." -ForegroundColor Yellow
 
+# Write rules to temp file (avoids PowerShell JSON escaping issues)
+$rulesJson = @'
+[
+  {
+    "name": "deny-slash24",
+    "matchCriteria": [
+      {
+        "matchCondition": "Contains",
+        "routePrefix": ["10.0.1.0/24", "10.0.2.0/24"]
+      }
+    ],
+    "actions": [
+      {
+        "type": "Drop"
+      }
+    ],
+    "nextStepIfMatched": "Terminate"
+  }
+]
+'@
+
+$tempFile = [System.IO.Path]::GetTempFileName()
+$rulesJson | Out-File -FilePath $tempFile -Encoding utf8
+
 az network vhub route-map create `
     --resource-group $ResourceGroupName `
     --vhub-name $HubName `
     --name "filter-vpn-specifics" `
-    --rules '[{
-        "name": "deny-slash24",
-        "matchCriteria": [{
-            "matchCondition": "Contains",
-            "routePrefix": ["10.0.1.0/24", "10.0.2.0/24"]
-        }],
-        "actions": [{
-            "type": "Drop"
-        }],
-        "nextStepIfMatched": "Terminate"
-    }, {
-        "name": "allow-all-else", 
-        "matchCriteria": [{
-            "matchCondition": "Contains",
-            "routePrefix": ["0.0.0.0/0"]
-        }],
-        "actions": [{
-            "type": "Continue"
-        }],
-        "nextStepIfMatched": "Continue"
-    }]'
+    --rules "@$tempFile"
+
+Remove-Item $tempFile -Force
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`n✓ Route Map created successfully!" -ForegroundColor Green
