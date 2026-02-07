@@ -178,7 +178,10 @@ After deployment, note these key values:
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
-1. Deploy with `-EnableRouteMaps` or manually apply route maps
+1. Deploy Route Maps:
+   ```powershell
+   .\deploy-bicep.ps1 -ResourceGroupName "vwan-failover-lab_rg" -Location westus3 -AdminPassword "YourPassword" -VpnPsk "YourPsk" -EnableRouteMaps
+   ```
 2. Associate route map with the vpn-backup connection in Portal
 3. **Expected**: Traffic now prefers the ER-PATH when both tunnels are active
 
