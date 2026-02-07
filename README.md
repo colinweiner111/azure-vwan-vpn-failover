@@ -178,7 +178,7 @@ After deployment, note these key values:
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
-1. Deploy Route Maps:
+1. Deploy Route Maps (incremental - only adds route maps, doesn't redeploy existing resources):
    ```powershell
    .\deploy-bicep.ps1 -ResourceGroupName "vwan-failover-lab_rg" -Location westus3 -AdminPassword "YourPassword" -VpnPsk "YourPsk" -EnableRouteMaps
    ```
