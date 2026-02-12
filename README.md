@@ -76,16 +76,41 @@ When traffic is destined for `10.0.1.x`:
 - Both routes match the destination
 - **LPM selects /24 (VPN) over /16 (ER)** — regardless of AS-PATH, Hub Routing Preference, or any other attribute
 
-## The Fix: Route Maps
+## The Fix: Route Maps with Summarization
 
-**Solution**: Apply a Route Map to the VPN connection that either:
+**Solution**: Apply a Route Map to the VPN connection that:
 
-1. **Option A — Filter more-specifics**: Deny the `/24` routes learned from VPN
-2. **Option B — Summarize routes**: Aggregate VPN routes to match ER prefix lengths
+1. **Summarizes routes**: Uses `RoutePrefix Replace` action to aggregate VPN's `/24` routes into a `/16` (matching ExpressRoute)
+2. **Prepends AS-path**: Adds `12076, 12076` (Microsoft's ASN) to make the VPN route less preferred
 
-This ensures prefix lengths are equal, allowing:
-- Hub Routing Preference (ExpressRoute) to take effect
-- AS-PATH prepending to influence route selection
+This ensures:
+- Prefix lengths are equal (both `/16`) so LPM no longer favors VPN
+- AS-path is longer on VPN, so BGP prefers ExpressRoute when both are up
+- **Failover works**: When ER is down, VPN's summarized `/16` provides backup
+- **Failback works**: When ER is restored, shorter AS-path wins
+
+### Route Map Configuration
+
+```json
+{
+  "rules": [
+    {
+      "name": "rule1-summarize",
+      "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
+      "actions": [{"type": "Replace", "parameters": [{"routePrefix": ["10.0.0.0/16"]}]}],
+      "nextStepIfMatched": "Continue"
+    },
+    {
+      "name": "rule2-prepend",
+      "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
+      "actions": [{"type": "Add", "parameters": [{"asPath": ["12076", "12076"]}]}],
+      "nextStepIfMatched": "Continue"
+    }
+  ]
+}
+```
+
+> **Note**: Azure Route Maps reject private ASNs (64512-65534) in actions. Use a public ASN like `12076` (Microsoft) for AS-path prepending.
 
 ## Prerequisites
 
@@ -178,14 +203,71 @@ After deployment, note these key values:
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
-1. Run the quick Route Maps script (~30 seconds):
+1. Create the Route Map with summarization + AS-path prepending:
    ```powershell
-   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab_rg" -HubName "hub1"
+   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab" -HubName "hub1"
    ```
-2. In Azure Portal, associate the route map with the vpn-backup connection:
-   - Virtual WAN → hub1 → VPN (Site to site) → conn-vpn-backup
-   - Set Inbound Route Map to `filter-vpn-specifics`
-3. **Expected**: The /24 routes are filtered, traffic now prefers ER-PATH
+   
+   Or manually via Azure CLI:
+   ```powershell
+   # Create route map with two rules
+   az network vhub route-map create -g vwan-failover-lab --vhub-name hub1 -n summarize-vpn --rules '[
+     {
+       "name": "rule1-summarize",
+       "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
+       "actions": [{"type": "Replace", "parameters": [{"routePrefix": ["10.0.0.0/16"]}]}],
+       "nextStepIfMatched": "Continue"
+     },
+     {
+       "name": "rule2-prepend",
+       "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
+       "actions": [{"type": "Add", "parameters": [{"asPath": ["12076", "12076"]}]}],
+       "nextStepIfMatched": "Continue"
+     }
+   ]'
+   
+   # Get route map ID
+   $routeMapId = az network vhub route-map show -g vwan-failover-lab --vhub-name hub1 -n summarize-vpn --query id -o tsv
+   
+   # Apply to VPN-backup connection inbound
+   az network vpn-gateway connection update -g vwan-failover-lab --gateway-name hub1-vpngw -n conn-vpn-backup --set routingConfiguration.inboundRouteMap.id=$routeMapId
+   ```
+
+2. Wait 2-3 minutes for the route map to take effect
+3. Verify routes show VPN-backup with longer AS-path:
+   ```powershell
+   az network vhub get-effective-routes -g vwan-failover-lab -n hub1 --resource-type VpnConnection --resource-id (az network vpn-gateway connection show -g vwan-failover-lab --gateway-name hub1-vpngw -n conn-vpn-backup --query id -o tsv) -o table
+   ```
+4. **Expected**: Traffic now prefers ER-PATH (192.168.1.12) due to shorter AS-path
+
+### Scenario 5: Verify Failover with Route Maps
+
+1. Stop the ER-PATH connection:
+   ```bash
+   # On frr-router
+   sudo systemctl stop ipsec frr
+   ```
+2. Wait 30-60 seconds for BGP timeout
+3. Check effective routes on spoke VM:
+   ```powershell
+   az network nic show-effective-route-table -g vwan-failover-lab -n spoke1-vm-nic -o table | Select-String "10.0.0.0/16"
+   ```
+4. Test connectivity:
+   ```powershell
+   az vm run-command invoke -g vwan-failover-lab -n spoke1-vm --command-id RunShellScript --scripts "nc -zv 10.0.1.10 22 -w 5 2>&1"
+   ```
+5. **Expected**: Route changes to 192.168.1.13 (VPN-backup), connectivity succeeds
+
+### Scenario 6: Verify Failback with Route Maps
+
+1. Restore the ER-PATH connection:
+   ```bash
+   # On frr-router
+   sudo systemctl start ipsec frr
+   ```
+2. Wait 30-60 seconds for BGP to reconverge
+3. Check effective routes again
+4. **Expected**: Route returns to 192.168.1.12 (ER-path preferred due to shorter AS-path)
 
 ## FRR Router Commands
 
@@ -238,11 +320,18 @@ sudo vtysh -c "show running-config"
 
 Based on this lab scenario, the recommended approach for ExpressRoute/VPN coexistence:
 
-1. **Align prefix advertisement** — Same prefix lengths on both paths
-2. **Use vWAN Route Maps** — Filter more-specifics from VPN if needed
-3. **Set Hub Routing Preference to ExpressRoute** — When prefixes are equal
-4. **AS-PATH prepending on VPN** — Additional bias once prefix lengths aligned
-5. **Configure both VPN instances** — For VPN backup resiliency
+1. **Use Route Map Summarization** — Use `RoutePrefix Replace` to aggregate VPN routes to match ExpressRoute prefix lengths (e.g., `/24` → `/16`)
+2. **AS-path Prepending with Public ASN** — Add entries like `12076, 12076` (Microsoft's ASN) to VPN routes to deprioritize them
+3. **Set Hub Routing Preference to ExpressRoute** — When prefixes are equal, this provides additional bias
+4. **Configure both VPN Gateway instances** — For VPN backup resiliency
+5. **Avoid Filtering** — Don't use `Drop` action on VPN routes, as this breaks failover when ER is down
+
+### Why Summarize Instead of Filter?
+
+| Approach | Failover (ER down) | Failback (ER restored) |
+|----------|-------------------|------------------------|
+| **Filter /24s** | ❌ No backup route | ✅ ER used |
+| **Summarize to /16** | ✅ VPN backup works | ✅ ER preferred (shorter AS-path) |
 
 **Important**: For mission-critical workloads, Microsoft recommends **dual ExpressRoute circuits in different peering locations** rather than ExpressRoute + VPN coexistence.
 
