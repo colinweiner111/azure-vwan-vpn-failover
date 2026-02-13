@@ -103,7 +103,7 @@ write_files:
         esp=aes256-sha256!
         type=tunnel
         auto=start
-        dpdaction=restart
+        dpdaction=clear
         dpddelay=30s
         dpdtimeout=120s
 

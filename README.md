@@ -190,6 +190,7 @@ After deployment, note these key values:
    ```bash
    sudo ipsec down vpn-backup
    ```
+   > **Note**: The tunnel will NOT auto-restart (dpdaction=clear). Use `sudo ipsec up vpn-backup` to bring it back.
 2. Wait for BGP to reconverge (~1-2 minutes)
 3. Check vWAN effective routes in Portal
 4. **Expected**: Traffic now uses the /16 route via ER-PATH (frr-router)
