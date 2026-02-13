@@ -84,7 +84,7 @@ When traffic is destined for `10.0.1.x`:
 **Solution**: Apply a Route Map to the VPN connection that:
 
 1. **Summarizes routes**: Uses `RoutePrefix Replace` action to aggregate VPN's `/24` routes into a `/16` (matching ExpressRoute)
-2. **Prepends AS-path**: Adds `12076, 12076` (Microsoft's ASN) to make the VPN route less preferred
+2. **Prepends AS-path**: Adds `132, 132` to make the VPN route less preferred (longer AS-path)
 
 This ensures:
 - Prefix lengths are equal (both `/16`) so LPM no longer favors VPN
@@ -106,14 +106,14 @@ This ensures:
     {
       "name": "rule2-prepend",
       "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
-      "actions": [{"type": "Add", "parameters": [{"asPath": ["12076", "12076"]}]}],
+      "actions": [{"type": "Add", "parameters": [{"asPath": ["132", "132"]}]}],
       "nextStepIfMatched": "Continue"
     }
   ]
 }
 ```
 
-> **Note**: Azure Route Maps reject private ASNs (64512-65534) in actions. Use a public ASN like `12076` (Microsoft) for AS-path prepending.
+> **Note**: Azure Route Maps reject private ASNs (64512-65534) AND reserved ASNs like 12076 (Microsoft). Use any public ASN in range 1-64495 (e.g., `132`, `174`, `3356`).
 
 ## Prerequisites
 
@@ -225,7 +225,7 @@ After deployment, note these key values:
      {
        "name": "rule2-prepend",
        "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
-       "actions": [{"type": "Add", "parameters": [{"asPath": ["12076", "12076"]}]}],
+       "actions": [{"type": "Add", "parameters": [{"asPath": ["132", "132"]}]}],
        "nextStepIfMatched": "Continue"
      }
    ]'
@@ -325,7 +325,7 @@ sudo vtysh -c "show running-config"
 Based on this lab scenario, the recommended approach for ExpressRoute/VPN coexistence:
 
 1. **Use Route Map Summarization** — Use `RoutePrefix Replace` to aggregate VPN routes to match ExpressRoute prefix lengths (e.g., `/24` → `/16`)
-2. **AS-path Prepending with Public ASN** — Add entries like `12076, 12076` (Microsoft's ASN) to VPN routes to deprioritize them
+2. **AS-path Prepending with Public ASN** — Add entries like `132, 132` to VPN routes to deprioritize them (Azure rejects private ASNs and Microsoft's 12076)
 3. **Set Hub Routing Preference to ExpressRoute** — When prefixes are equal, this provides additional bias
 4. **Configure both VPN Gateway instances** — For VPN backup resiliency
 5. **Avoid Filtering** — Don't use `Drop` action on VPN routes, as this breaks failover when ER is down

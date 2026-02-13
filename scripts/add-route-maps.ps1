@@ -3,7 +3,10 @@
 # =============================================================================
 # Creates Route Map with Summarization + AS-Path Prepending:
 #   1. Summarizes VPN /24 routes to /16 (matching ExpressRoute)
-#   2. Prepends AS-path (12076) to deprioritize VPN when ER is available
+#   2. Prepends AS-path (132) to deprioritize VPN when ER is available
+#
+# Note: Azure rejects private ASNs (65001) and Microsoft's ASN (12076).
+#       Use any public ASN in range 1-64495 (e.g., 132, 174, 3356).
 #
 # This enables proper failover (VPN when ER down) AND failback (ER preferred).
 # =============================================================================
@@ -25,7 +28,7 @@ param(
     [string]$OnPremPrefix = "10.0.0.0/16",
     
     [Parameter(Mandatory=$false)]
-    [string]$PrependAsn = "12076",
+    [string]$PrependAsn = "132",
     
     [switch]$SkipApply,
     [switch]$RemoveRouteMap,
