@@ -49,6 +49,9 @@ LPM is evaluated before any "prefer ExpressRoute" behavior can help.
                               │   │            │   │(VPN-BACKUP)│    │
                               │   │ ASN 65001  │   │ ASN 65001  │    │
                               │   │            │   │            │    │
+                              │   │ BGP Peer:  │   │ BGP Peer:  │    │
+                              │   │192.168.1.12│   │192.168.1.13│    │
+                              │   │            │   │            │    │
                               │   │ Advertises │   │ Advertises │    │
                               │   │10.0.0.0/16 │   │10.0.1.0/24 │    │
                               │   │            │   │10.0.2.0/24 │    │
@@ -159,8 +162,8 @@ After deployment, note these key values:
 | VPN GW Instance 1 | `hubVpnGwPublicIp1` | VPN-BACKUP tunnel endpoint |
 
 **BGP Peer IPs** (check with `az network vpn-gateway show`):
-- Instance 0: typically `192.168.1.13` (ER-PATH)
-- Instance 1: typically `192.168.1.12` (VPN-BACKUP)
+- Instance 0: `192.168.1.12` → conn-er-path (ER simulator)
+- Instance 1: `192.168.1.13` → conn-vpn-backup (VPN backup)
 
 ## Lab Testing Scenarios
 
