@@ -5,8 +5,11 @@
 #   1. Summarizes VPN /24 routes to /16 (matching ExpressRoute)
 #   2. Prepends AS-path (132) to deprioritize VPN when ER is available
 #
-# Note: Azure rejects private ASNs (65001) and Microsoft's ASN (12076).
-#       Use any public ASN in range 1-64495 (e.g., 132, 174, 3356).
+# ASN Restrictions for Azure Route Maps:
+#   - Private ASNs (64512-65534):    REJECTED
+#   - Microsoft ASN (12076):         REJECTED
+#   - Documentation ASNs (64496-64511): May work (untested)
+#   - Public ASNs (1-64495):         USE THESE (e.g., 132, 174, 3356)
 #
 # This enables proper failover (VPN when ER down) AND failback (ER preferred).
 # =============================================================================

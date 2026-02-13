@@ -113,7 +113,11 @@ This ensures:
 }
 ```
 
-> **Note**: Azure Route Maps reject private ASNs (64512-65534) AND reserved ASNs like 12076 (Microsoft). Use any public ASN in range 1-64495 (e.g., `132`, `174`, `3356`).
+> **Important - ASN Restrictions**:
+> - **Private ASNs (64512-65534)**: ❌ Rejected by Azure Route Maps
+> - **Microsoft ASN (12076)**: ❌ Rejected (reserved)
+> - **Documentation ASNs (64496-64511)**: ⚠️ May work but not tested
+> - **Public ASNs (1-64495)**: ✅ Use any value (e.g., `132`, `174`, `3356`)
 
 ## Prerequisites
 
