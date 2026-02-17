@@ -106,7 +106,7 @@ This ensures:
     {
       "name": "rule2-prepend",
       "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
-      "actions": [{"type": "Add", "parameters": [{"asPath": ["132", "132"]}]}],
+      "actions": [{"type": "Add", "parameters": [{"asPath": ["64496", "64496"]}]}],
       "nextStepIfMatched": "Continue"
     }
   ]
@@ -116,8 +116,8 @@ This ensures:
 > **Important - ASN Restrictions**:
 > - **Private ASNs (64512-65534)**: ❌ Rejected by Azure Route Maps
 > - **Microsoft ASN (12076)**: ❌ Rejected (reserved)
-> - **Documentation ASNs (64496-64511)**: ⚠️ May work but not tested
-> - **Public ASNs (1-64495)**: ✅ Use any value (e.g., `132`, `174`, `3356`)
+> - **Documentation ASNs (64496-64511)**: ✅ Works! (RFC 5398 - designed for examples/labs)
+> - **Public ASNs (1-64495)**: ✅ Also works (e.g., `132`, `174`, `3356`)
 
 ## Prerequisites
 
@@ -190,11 +190,18 @@ After deployment, note these key values:
 
 ### Scenario 2: Failover Test
 
-1. On `frr-router-backup`, disable the VPN-BACKUP tunnel:
+1. On `frr-router-backup`, **stop the strongSwan service** to disable the VPN-BACKUP tunnel:
    ```bash
-   sudo ipsec down vpn-backup
+   # Must stop the service - Azure VPN Gateway initiates from its side
+   # so 'ipsec down' alone won't keep the tunnel down!
+   sudo systemctl stop ipsec
    ```
-   > **Note**: The tunnel will NOT auto-restart (dpdaction=clear). Use `sudo ipsec up vpn-backup` to bring it back.
+   > **Important**: `sudo ipsec down vpn-backup` won't work because Azure's VPN Gateway actively reconnects. You must stop the entire service.
+
+   To bring it back up:
+   ```bash
+   sudo systemctl start ipsec
+   ```
 2. Wait for BGP to reconverge (~1-2 minutes)
 3. Check vWAN effective routes in Portal
 4. **Expected**: Traffic now uses the /16 route via ER-PATH (frr-router)
