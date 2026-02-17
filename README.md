@@ -208,12 +208,12 @@ After deployment, note these key values:
 
 ### Scenario 3: Failback Test (The Issue)
 
-1. Re-enable the VPN-BACKUP tunnel:
+1. Re-enable the VPN-BACKUP tunnel by starting the service:
    ```bash
-   sudo ipsec up vpn-backup
+   sudo systemctl start ipsec
    ```
-2. Wait for BGP to reconverge
-3. Check vWAN routes
+2. Wait for BGP to reconverge (~1-2 minutes)
+3. Check vWAN effective routes in Portal
 4. **Expected (without fix)**: /24 routes return and win due to LPM — no automatic failback to "ER"
 
 ### Scenario 4: Apply Route Maps (The Fix)
