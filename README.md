@@ -17,49 +17,7 @@ LPM is evaluated before any "prefer ExpressRoute" behavior can help.
 
 ## Architecture
 
-```
-                              ┌──────────────────────────────────────┐
-                              │           Azure vWAN                 │
-                              │  ┌────────────────────────────────┐  │
-                              │  │         Secured Hub            │  │
-                              │  │   (Azure Firewall + Routing    │  │
-                              │  │         Intent)                │  │
-                              │  │                                │  │
-                              │  │    VPN Gateway (ASN 65515)     │  │
-                              │  │     Instance 0   Instance 1    │  │
-                              │  └────────┬─────────────┬─────────┘  │
-                              │           │             │            │
-                              │   er-path-site    vpn-backup-site   │
-                              │   (conn-er-path)  (conn-vpn-backup)  │
-                              │           │             │            │
-                              └───────────┼─────────────┼────────────┘
-                                          │             │
-                  BGP: 10.0.0.0/16        │             │       BGP: 10.0.1.0/24
-                    (aggregate)           │             │            10.0.2.0/24
-                                          │             │          (more-specific)
-                                  IPsec Tunnel      IPsec Tunnel
-                                          │             │
-                              ┌───────────┴─────────────┴────────────┐
-                              │                                      │
-                              │        On-Prem VNet (10.0.0.0/16)    │
-                              │                                      │
-                              │   ┌────────────┐   ┌────────────┐    │
-                              │   │ frr-router │   │frr-router- │    │
-                              │   │ (ER-PATH)  │   │  backup    │    │
-                              │   │            │   │(VPN-BACKUP)│    │
-                              │   │ ASN 65001  │   │ ASN 65001  │    │
-                              │   │            │   │            │    │
-                              │   │ BGP Peer:  │   │ BGP Peer:  │    │
-                              │   │192.168.1.12│   │192.168.1.13│    │
-                              │   │            │   │            │    │
-                              │   │ Advertises │   │ Advertises │    │
-                              │   │10.0.0.0/16 │   │10.0.1.0/24 │    │
-                              │   │            │   │10.0.2.0/24 │    │
-                              │   └────────────┘   └────────────┘    │
-                              │                                      │
-
-                              └──────────────────────────────────────┘
-```
+![Architecture Diagram](image/vwan-vpn-failover.drawio.svg)
 
 ## Why Two VMs?
 
