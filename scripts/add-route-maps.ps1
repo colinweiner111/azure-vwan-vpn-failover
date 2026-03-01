@@ -202,7 +202,7 @@ if (-not $SkipApply) {
         --resource-group $ResourceGroupName `
         --gateway-name $vpnGwName `
         --name $VpnConnectionName `
-        --set inboundRouteMap.id=$routeMapId `
+        --set routingConfiguration.inboundRouteMap.id=$routeMapId `
         --output none
     
     if ($LASTEXITCODE -ne 0) {
