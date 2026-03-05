@@ -1,0 +1,63 @@
+**********************
+PowerShell transcript start
+Start time: 20260227195833
+Username: REDMOND\coweiner
+RunAs User: REDMOND\coweiner
+Configuration Name: 
+Machine: DESKTOP-MRAI83M (Microsoft Windows NT 10.0.26220.0)
+Host Application: C:\Program Files\PowerShell\7\pwsh.dll -NoProfile -ExecutionPolicy Bypass -File C:\_Demo\azure-vwan-vpn-failover\scheduled-deploy.ps1
+Process ID: 39044
+PSVersion: 7.5.4
+PSEdition: Core
+GitCommitId: 7.5.4
+OS: Microsoft Windows 10.0.26220
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+Transcript started, output file is C:\_Demo\azure-vwan-vpn-failover\deploy-log-20260227-195833.txt
+Starting scheduled deployment at 02/27/2026 19:58:33
+Checking Azure login...
+Using subscription: ME-MngEnvMCAP021962-coweiner-1 (f4c81bdc-9009-4c72-89ae-f96947f57d27)
+
+========================================
+vWAN ExpressRoute/VPN Failover Lab
+========================================
+
+Deployment Parameters:
+  Resource Group: vwan-failover-lab
+  Location: westus3
+  Admin Username: azureuser
+  Firewall: Standard
+  Bastion: Enabled
+  Route Maps: True
+
+Lab Architecture:
+  - Dual FRR VMs with dedicated IPsec tunnels to vWAN VPN Gateway:
+    * frr-router (ER-PATH): Tunnel to Instance0, advertises 10.0.0.0/16
+    * frr-router-backup (VPN): Tunnel to Instance1, advertises /24 specifics
+  - LPM causes /24 routes to win over /16 aggregate
+  - Demonstrates failover/failback behavior
+
+Components to deploy:
+  - Virtual WAN with Hub
+  - On-Prem VNet (10.0.0.0/16)
+  - 2 FRR/strongSwan Router VMs (Ubuntu)
+  - vWAN VPN Gateway (2 instances)
+  - Azure Bastion for VM access
+  - Azure Firewall (Standard SKU)
+  - Route Maps (for demonstrating the fix)
+
+Estimated deployment time: 50-60 minutes
+  (VPN Gateway: ~30 min)
+Starting deployment...
+
+
+✗ Deployment failed
+Deployment finished at 02/27/2026 20:40:34
+**********************
+PowerShell transcript end
+End time: 20260227204034
+**********************

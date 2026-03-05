@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "4866836140531573653"
+      "templateHash": "7289949310885286867"
     }
   },
   "parameters": {
@@ -32,9 +32,37 @@
     },
     "hubName": {
       "type": "string",
-      "defaultValue": "hub1",
+      "defaultValue": "hub1-westus3",
       "metadata": {
         "description": "Hub name"
+      }
+    },
+    "hub2Name": {
+      "type": "string",
+      "defaultValue": "hub2-eastus2",
+      "metadata": {
+        "description": "Secondary hub name"
+      }
+    },
+    "hub2Location": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Secondary hub region"
+      }
+    },
+    "hub3Name": {
+      "type": "string",
+      "defaultValue": "hub3-westus",
+      "metadata": {
+        "description": "Tertiary hub name"
+      }
+    },
+    "hub3Location": {
+      "type": "string",
+      "defaultValue": "westus",
+      "metadata": {
+        "description": "Tertiary hub region"
       }
     },
     "adminUsername": {
@@ -129,6 +157,18 @@
           },
           "hubName": {
             "value": "[parameters('hubName')]"
+          },
+          "hub2Name": {
+            "value": "[parameters('hub2Name')]"
+          },
+          "hub2Location": {
+            "value": "[parameters('hub2Location')]"
+          },
+          "hub3Name": {
+            "value": "[parameters('hub3Name')]"
+          },
+          "hub3Location": {
+            "value": "[parameters('hub3Location')]"
           }
         },
         "template": {
@@ -138,7 +178,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "9211084398173548806"
+              "templateHash": "18305821356143381172"
             }
           },
           "parameters": {
@@ -150,6 +190,30 @@
             },
             "hubName": {
               "type": "string"
+            },
+            "hub2Name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name for the second hub"
+              }
+            },
+            "hub2Location": {
+              "type": "string",
+              "metadata": {
+                "description": "Location for the second hub"
+              }
+            },
+            "hub3Name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name for the third hub"
+              }
+            },
+            "hub3Location": {
+              "type": "string",
+              "metadata": {
+                "description": "Location for the third hub"
+              }
             }
           },
           "resources": [
@@ -170,6 +234,40 @@
               "location": "[parameters('location')]",
               "properties": {
                 "addressPrefix": "192.168.1.0/24",
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "sku": "Standard",
+                "hubRoutingPreference": "ExpressRoute"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs",
+              "apiVersion": "2023-11-01",
+              "name": "[parameters('hub2Name')]",
+              "location": "[parameters('hub2Location')]",
+              "properties": {
+                "addressPrefix": "192.168.2.0/24",
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "sku": "Standard",
+                "hubRoutingPreference": "ExpressRoute"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs",
+              "apiVersion": "2023-11-01",
+              "name": "[parameters('hub3Name')]",
+              "location": "[parameters('hub3Location')]",
+              "properties": {
+                "addressPrefix": "192.168.3.0/24",
                 "virtualWan": {
                   "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
                 },
@@ -316,6 +414,14 @@
               "type": "string",
               "value": "[resourceId('Microsoft.Network/virtualHubs', parameters('hubName'))]"
             },
+            "hub2Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs', parameters('hub2Name'))]"
+            },
+            "hub3Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs', parameters('hub3Name'))]"
+            },
             "onpremVnetId": {
               "type": "string",
               "value": "[resourceId('Microsoft.Network/virtualNetworks', 'onprem-vnet')]"
@@ -434,6 +540,190 @@
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
+      "name": "vpngw-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub2Location')]"
+          },
+          "hubName": {
+            "value": "[parameters('hub2Name')]"
+          },
+          "hubId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub2Id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "12086420343574605425"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "hubName": {
+              "type": "string"
+            },
+            "hubId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/vpnGateways",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-vpngw', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualHub": {
+                  "id": "[parameters('hubId')]"
+                },
+                "bgpSettings": {
+                  "asn": 65515
+                },
+                "vpnGatewayScaleUnit": 1
+              }
+            }
+          ],
+          "outputs": {
+            "vpnGatewayId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName')))]"
+            },
+            "vpnGatewayName": {
+              "type": "string",
+              "value": "[format('{0}-vpngw', parameters('hubName'))]"
+            },
+            "bgpPeeringAddress0": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').bgpSettings.bgpPeeringAddresses[0].defaultBgpIpAddresses[0]]"
+            },
+            "bgpPeeringAddress1": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').bgpSettings.bgpPeeringAddresses[1].defaultBgpIpAddresses[0]]"
+            },
+            "publicIpAddress0": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').ipConfigurations[0].publicIpAddress]"
+            },
+            "publicIpAddress1": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').ipConfigurations[1].publicIpAddress]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "vpngw-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub3Location')]"
+          },
+          "hubName": {
+            "value": "[parameters('hub3Name')]"
+          },
+          "hubId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub3Id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "12086420343574605425"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "hubName": {
+              "type": "string"
+            },
+            "hubId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/vpnGateways",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-vpngw', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualHub": {
+                  "id": "[parameters('hubId')]"
+                },
+                "bgpSettings": {
+                  "asn": 65515
+                },
+                "vpnGatewayScaleUnit": 1
+              }
+            }
+          ],
+          "outputs": {
+            "vpnGatewayId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName')))]"
+            },
+            "vpnGatewayName": {
+              "type": "string",
+              "value": "[format('{0}-vpngw', parameters('hubName'))]"
+            },
+            "bgpPeeringAddress0": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').bgpSettings.bgpPeeringAddresses[0].defaultBgpIpAddresses[0]]"
+            },
+            "bgpPeeringAddress1": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').bgpSettings.bgpPeeringAddresses[1].defaultBgpIpAddresses[0]]"
+            },
+            "publicIpAddress0": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').ipConfigurations[0].publicIpAddress]"
+            },
+            "publicIpAddress1": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/vpnGateways', format('{0}-vpngw', parameters('hubName'))), '2023-11-01').ipConfigurations[1].publicIpAddress]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "frr-vm-deployment",
       "resourceGroup": "[parameters('resourceGroupName')]",
       "properties": {
@@ -468,6 +758,18 @@
           },
           "hubVpnGwPublicIp0": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment'), '2025-04-01').outputs.publicIpAddress0.value]"
+          },
+          "hub2VpnGwBgpIp0": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.bgpPeeringAddress0.value]"
+          },
+          "hub2VpnGwPublicIp0": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.publicIpAddress0.value]"
+          },
+          "hub3VpnGwBgpIp0": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.bgpPeeringAddress0.value]"
+          },
+          "hub3VpnGwPublicIp0": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.publicIpAddress0.value]"
           }
         },
         "template": {
@@ -477,7 +779,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "6541117891161282648"
+              "templateHash": "16022368987770953816"
             }
           },
           "parameters": {
@@ -507,6 +809,18 @@
             },
             "hubVpnGwPublicIp0": {
               "type": "string"
+            },
+            "hub2VpnGwBgpIp0": {
+              "type": "string"
+            },
+            "hub2VpnGwPublicIp0": {
+              "type": "string"
+            },
+            "hub3VpnGwBgpIp0": {
+              "type": "string"
+            },
+            "hub3VpnGwPublicIp0": {
+              "type": "string"
             }
           },
           "variables": {
@@ -514,7 +828,7 @@
             "nicName": "[format('{0}-nic', variables('vmName'))]",
             "publicIpName": "[format('{0}-pip', variables('vmName'))]",
             "onpremAsn": 65001,
-            "cloudInitConfig": "[format('#cloud-config\r\npackage_update: true\r\npackage_upgrade: true\r\n\r\npackages:\r\n  - strongswan\r\n  - strongswan-pki\r\n  - libcharon-extra-plugins\r\n  - frr\r\n  - frr-pythontools\r\n  - netcat-openbsd\r\n\r\nwrite_files:\r\n  # strongSwan ipsec.conf - Single tunnel to VPN Gateway Instance 0\r\n  - path: /etc/ipsec.conf\r\n    content: |\r\n      config setup\r\n        charondebug=\"ike 1, knl 1\"\r\n\r\n      conn %default\r\n        ikelifetime=28800s\r\n        keylife=3600s\r\n        rekeymargin=3m\r\n        keyingtries=3\r\n        keyexchange=ikev2\r\n        authby=secret\r\n        ike=aes256-sha256-modp1024!\r\n        esp=aes256-sha256!\r\n        type=tunnel\r\n        auto=start\r\n        dpdaction=restart\r\n        dpddelay=30s\r\n        dpdtimeout=120s\r\n\r\n      # ER Path tunnel (to VPN GW Instance 0)\r\n      conn er-path\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={0}\r\n        rightsubnet=192.168.0.0/16,10.100.0.0/16,10.200.0.0/16\r\n        rightid={0}\r\n\r\n  # strongSwan secrets\r\n  - path: /etc/ipsec.secrets\r\n    permissions: ''0600''\r\n    content: |\r\n      : PSK \"{1}\"\r\n\r\n  # FRR daemons config\r\n  - path: /etc/frr/daemons\r\n    content: |\r\n      zebra=yes\r\n      bgpd=yes\r\n      ospfd=no\r\n      ospf6d=no\r\n      ripd=no\r\n      ripngd=no\r\n      isisd=no\r\n      pimd=no\r\n      ldpd=no\r\n      nhrpd=no\r\n      eigrpd=no\r\n      babeld=no\r\n      sharpd=no\r\n      staticd=yes\r\n      pbrd=no\r\n      bfdd=no\r\n      fabricd=no\r\n      vrrpd=no\r\n      pathd=no\r\n\r\n  # FRR configuration - Advertise AGGREGATE route (10.0.0.0/16)\r\n  # __LOCAL_IP__ will be replaced at runtime with actual private IP\r\n  - path: /etc/frr/frr.conf\r\n    content: |\r\n      frr version 8.1\r\n      frr defaults traditional\r\n      hostname frr-router\r\n      log syslog informational\r\n      service integrated-vtysh-config\r\n      !\r\n      ! Static route for aggregate on-prem network\r\n      ip route 10.0.0.0/16 Null0\r\n      !\r\n      ! Prefix list for aggregate route only\r\n      ip prefix-list AGGREGATE seq 5 permit 10.0.0.0/16\r\n      !\r\n      ! Route-map for ER path: Only advertise aggregate\r\n      route-map TO_ER_PATH permit 10\r\n        match ip address prefix-list AGGREGATE\r\n      route-map TO_ER_PATH deny 20\r\n      !\r\n      ! BGP configuration\r\n      router bgp {2}\r\n        bgp router-id __LOCAL_IP__\r\n        no bgp ebgp-requires-policy\r\n        bgp log-neighbor-changes\r\n        !\r\n        ! ER-PATH neighbor (VPN GW Instance 0) - receives AGGREGATE\r\n        neighbor {3} remote-as 65515\r\n        neighbor {3} ebgp-multihop 64\r\n        neighbor {3} update-source __LOCAL_IP__\r\n        neighbor {3} description ER-PATH\r\n        !\r\n        address-family ipv4 unicast\r\n          redistribute static\r\n          neighbor {3} soft-reconfiguration inbound\r\n          neighbor {3} route-map TO_ER_PATH out\r\n        exit-address-family\r\n      !\r\n      line vty\r\n      !\r\n\r\n  # Setup script - only replaces __LOCAL_IP__ and adds routes\r\n  - path: /opt/setup-vpn.sh\r\n    permissions: ''0755''\r\n    content: |\r\n      #!/bin/bash\r\n      set -e\r\n      \r\n      LOG=/var/log/vpn-setup.log\r\n      exec > >(tee -a $LOG) 2>&1\r\n      echo \"=== ER-Path Setup started at $(date) ===\"\r\n      \r\n      # Get local private IP\r\n      LOCAL_IP=$(ip -4 addr show eth0 | grep -oP ''(?<=inet\\s)\\d+(\\.\\d+){{3}}'' | head -1)\r\n      echo \"Local IP: $LOCAL_IP\"\r\n      \r\n      # Get default gateway\r\n      DEFAULT_GW=$(ip route | grep default | awk ''{{print $3}}'')\r\n      echo \"Default Gateway: $DEFAULT_GW\"\r\n      \r\n      # Replace __LOCAL_IP__ placeholder in FRR config\r\n      sed -i \"s/__LOCAL_IP__/$LOCAL_IP/g\" /etc/frr/frr.conf\r\n      \r\n      # Enable IP forwarding\r\n      echo ''net.ipv4.ip_forward=1'' >> /etc/sysctl.conf\r\n      sysctl -w net.ipv4.ip_forward=1\r\n      \r\n      echo \"Starting IPsec...\"\r\n      systemctl enable ipsec\r\n      systemctl restart ipsec\r\n      \r\n      # Wait for tunnel to establish\r\n      echo \"Waiting for IPsec tunnel...\"\r\n      sleep 20\r\n      ipsec status || true\r\n      \r\n      # Add route to BGP peer via default gateway\r\n      echo \"Adding route to BGP peer {3}...\"\r\n      ip route add {3}/32 via $DEFAULT_GW dev eth0 || true\r\n      \r\n      echo \"Starting FRR...\"\r\n      systemctl enable frr\r\n      systemctl restart frr\r\n      \r\n      # Wait for BGP to establish\r\n      sleep 20\r\n      \r\n      echo \"=== Setup complete at $(date) ===\"\r\n      echo \"\"\r\n      echo \"IPsec status:\"\r\n      ipsec status || true\r\n      echo \"\"\r\n      echo \"BGP summary:\"\r\n      vtysh -c \"show ip bgp summary\" || true\r\n\r\nruncmd:\r\n  - /opt/setup-vpn.sh\r\n', parameters('hubVpnGwPublicIp0'), parameters('vpnPsk'), string(variables('onpremAsn')), parameters('hubVpnGwBgpIp0'))]"
+            "cloudInitConfig": "[format('#cloud-config\r\npackage_update: true\r\npackage_upgrade: true\r\n\r\npackages:\r\n  - strongswan\r\n  - strongswan-pki\r\n  - libcharon-extra-plugins\r\n  - frr\r\n  - frr-pythontools\r\n  - netcat-openbsd\r\n\r\nwrite_files:\r\n  # strongSwan ipsec.conf - 3 tunnels to each hub''s VPN Gateway Instance 0\r\n  - path: /etc/ipsec.conf\r\n    content: |\r\n      config setup\r\n        charondebug=\"ike 1, knl 1\"\r\n\r\n      conn %default\r\n        ikelifetime=28800s\r\n        keylife=3600s\r\n        rekeymargin=3m\r\n        keyingtries=3\r\n        keyexchange=ikev2\r\n        authby=secret\r\n        ike=aes256-sha256-modp1024!\r\n        esp=aes256-sha256!\r\n        type=tunnel\r\n        auto=start\r\n        dpdaction=clear\r\n        dpddelay=30s\r\n        dpdtimeout=120s\r\n\r\n      # ER Path tunnel to Hub1 VPN GW Instance 0 (westus3)\r\n      conn er-path-hub1\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={0}\r\n        rightsubnet=192.168.1.0/24,10.100.0.0/16,10.200.0.0/16\r\n        rightid={0}\r\n\r\n      # ER Path tunnel to Hub2 VPN GW Instance 0 (eastus2)\r\n      conn er-path-hub2\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={4}\r\n        rightsubnet=192.168.2.0/24,10.110.0.0/16,10.210.0.0/16\r\n        rightid={4}\r\n\r\n      # ER Path tunnel to Hub3 VPN GW Instance 0 (westus)\r\n      conn er-path-hub3\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={6}\r\n        rightsubnet=192.168.3.0/24,10.120.0.0/16,10.220.0.0/16\r\n        rightid={6}\r\n\r\n  # strongSwan secrets\r\n  - path: /etc/ipsec.secrets\r\n    permissions: ''0600''\r\n    content: |\r\n      : PSK \"{1}\"\r\n\r\n  # FRR daemons config\r\n  - path: /etc/frr/daemons\r\n    content: |\r\n      zebra=yes\r\n      bgpd=yes\r\n      ospfd=no\r\n      ospf6d=no\r\n      ripd=no\r\n      ripngd=no\r\n      isisd=no\r\n      pimd=no\r\n      ldpd=no\r\n      nhrpd=no\r\n      eigrpd=no\r\n      babeld=no\r\n      sharpd=no\r\n      staticd=yes\r\n      pbrd=no\r\n      bfdd=no\r\n      fabricd=no\r\n      vrrpd=no\r\n      pathd=no\r\n\r\n  # FRR configuration - Advertise AGGREGATE route (10.0.0.0/16) to all 3 hubs\r\n  # __LOCAL_IP__ will be replaced at runtime with actual private IP\r\n  - path: /etc/frr/frr.conf\r\n    content: |\r\n      frr version 8.1\r\n      frr defaults traditional\r\n      hostname frr-router\r\n      log syslog informational\r\n      service integrated-vtysh-config\r\n      !\r\n      ! Static route for aggregate on-prem network\r\n      ip route 10.0.0.0/16 Null0\r\n      !\r\n      ! Prefix list for aggregate route only\r\n      ip prefix-list AGGREGATE seq 5 permit 10.0.0.0/16\r\n      !\r\n      ! Route-map for ER path: Only advertise aggregate\r\n      route-map TO_ER_PATH permit 10\r\n        match ip address prefix-list AGGREGATE\r\n      route-map TO_ER_PATH deny 20\r\n      !\r\n      ! BGP configuration\r\n      router bgp {2}\r\n        bgp router-id __LOCAL_IP__\r\n        no bgp ebgp-requires-policy\r\n        bgp log-neighbor-changes\r\n        !\r\n        ! Hub1 ER-PATH neighbor (VPN GW Instance 0)\r\n        neighbor {3} remote-as 65515\r\n        neighbor {3} ebgp-multihop 64\r\n        neighbor {3} update-source __LOCAL_IP__\r\n        neighbor {3} timers 3 9\r\n        neighbor {3} description ER-PATH-HUB1\r\n        !\r\n        ! Hub2 ER-PATH neighbor (VPN GW Instance 0)\r\n        neighbor {5} remote-as 65515\r\n        neighbor {5} ebgp-multihop 64\r\n        neighbor {5} update-source __LOCAL_IP__\r\n        neighbor {5} timers 3 9\r\n        neighbor {5} description ER-PATH-HUB2\r\n        !\r\n        ! Hub3 ER-PATH neighbor (VPN GW Instance 0)\r\n        neighbor {7} remote-as 65515\r\n        neighbor {7} ebgp-multihop 64\r\n        neighbor {7} update-source __LOCAL_IP__\r\n        neighbor {7} timers 3 9\r\n        neighbor {7} description ER-PATH-HUB3\r\n        !\r\n        address-family ipv4 unicast\r\n          redistribute static\r\n          neighbor {3} soft-reconfiguration inbound\r\n          neighbor {3} route-map TO_ER_PATH out\r\n          neighbor {5} soft-reconfiguration inbound\r\n          neighbor {5} route-map TO_ER_PATH out\r\n          neighbor {7} soft-reconfiguration inbound\r\n          neighbor {7} route-map TO_ER_PATH out\r\n        exit-address-family\r\n      !\r\n      line vty\r\n      !\r\n\r\n  # Setup script - only replaces __LOCAL_IP__ and adds routes\r\n  - path: /opt/setup-vpn.sh\r\n    permissions: ''0755''\r\n    content: |\r\n      #!/bin/bash\r\n      set -e\r\n      \r\n      LOG=/var/log/vpn-setup.log\r\n      exec > >(tee -a $LOG) 2>&1\r\n      echo \"=== ER-Path Multi-Hub Setup started at $(date) ===\"\r\n      \r\n      # Get local private IP\r\n      LOCAL_IP=$(ip -4 addr show eth0 | grep -oP ''(?<=inet\\s)\\d+(\\.\\d+){{3}}'' | head -1)\r\n      echo \"Local IP: $LOCAL_IP\"\r\n      \r\n      # Get default gateway\r\n      DEFAULT_GW=$(ip route | grep default | awk ''{{print $3}}'')\r\n      echo \"Default Gateway: $DEFAULT_GW\"\r\n      \r\n      # Replace __LOCAL_IP__ placeholder in FRR config\r\n      sed -i \"s/__LOCAL_IP__/$LOCAL_IP/g\" /etc/frr/frr.conf\r\n      \r\n      # Enable IP forwarding\r\n      echo ''net.ipv4.ip_forward=1'' >> /etc/sysctl.conf\r\n      sysctl -w net.ipv4.ip_forward=1\r\n      \r\n      echo \"Starting IPsec...\"\r\n      systemctl enable ipsec\r\n      systemctl restart ipsec\r\n      \r\n      # Wait for tunnels to establish\r\n      echo \"Waiting for IPsec tunnels...\"\r\n      sleep 30\r\n      ipsec status || true\r\n      \r\n      # Add routes to all 3 BGP peers via default gateway\r\n      echo \"Adding routes to BGP peers...\"\r\n      ip route add {3}/32 via $DEFAULT_GW dev eth0 || true\r\n      ip route add {5}/32 via $DEFAULT_GW dev eth0 || true\r\n      ip route add {7}/32 via $DEFAULT_GW dev eth0 || true\r\n      \r\n      echo \"Starting FRR...\"\r\n      systemctl enable frr\r\n      systemctl restart frr\r\n      \r\n      # Wait for BGP to establish\r\n      sleep 30\r\n      \r\n      echo \"=== Setup complete at $(date) ===\"\r\n      echo \"\"\r\n      echo \"IPsec status:\"\r\n      ipsec status || true\r\n      echo \"\"\r\n      echo \"BGP summary:\"\r\n      vtysh -c \"show ip bgp summary\" || true\r\n\r\nruncmd:\r\n  - /opt/setup-vpn.sh\r\n', parameters('hubVpnGwPublicIp0'), parameters('vpnPsk'), string(variables('onpremAsn')), parameters('hubVpnGwBgpIp0'), parameters('hub2VpnGwPublicIp0'), parameters('hub2VpnGwBgpIp0'), parameters('hub3VpnGwPublicIp0'), parameters('hub3VpnGwBgpIp0'))]"
           },
           "resources": [
             {
@@ -625,7 +939,9 @@
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment')]"
       ]
     },
     {
@@ -665,6 +981,18 @@
           },
           "hubVpnGwPublicIp1": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
+          },
+          "hub2VpnGwBgpIp1": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.bgpPeeringAddress1.value]"
+          },
+          "hub2VpnGwPublicIp1": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
+          },
+          "hub3VpnGwBgpIp1": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.bgpPeeringAddress1.value]"
+          },
+          "hub3VpnGwPublicIp1": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
           }
         },
         "template": {
@@ -674,7 +1002,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.39.26.7824",
-              "templateHash": "9366484787016575819"
+              "templateHash": "16495179552493321906"
             }
           },
           "parameters": {
@@ -704,6 +1032,18 @@
             },
             "hubVpnGwPublicIp1": {
               "type": "string"
+            },
+            "hub2VpnGwBgpIp1": {
+              "type": "string"
+            },
+            "hub2VpnGwPublicIp1": {
+              "type": "string"
+            },
+            "hub3VpnGwBgpIp1": {
+              "type": "string"
+            },
+            "hub3VpnGwPublicIp1": {
+              "type": "string"
             }
           },
           "variables": {
@@ -711,7 +1051,7 @@
             "nicName": "[format('{0}-nic', variables('vmName'))]",
             "publicIpName": "[format('{0}-pip', variables('vmName'))]",
             "onpremAsn": 65001,
-            "cloudInitConfig": "[format('#cloud-config\r\npackage_update: true\r\npackage_upgrade: true\r\n\r\npackages:\r\n  - strongswan\r\n  - strongswan-pki\r\n  - libcharon-extra-plugins\r\n  - frr\r\n  - frr-pythontools\r\n  - netcat-openbsd\r\n\r\nwrite_files:\r\n  # strongSwan ipsec.conf - Single tunnel to VPN Gateway Instance 1\r\n  - path: /etc/ipsec.conf\r\n    content: |\r\n      config setup\r\n        charondebug=\"ike 1, knl 1\"\r\n\r\n      conn %default\r\n        ikelifetime=28800s\r\n        keylife=3600s\r\n        rekeymargin=3m\r\n        keyingtries=3\r\n        keyexchange=ikev2\r\n        authby=secret\r\n        ike=aes256-sha256-modp1024!\r\n        esp=aes256-sha256!\r\n        type=tunnel\r\n        auto=start\r\n        dpdaction=restart\r\n        dpddelay=30s\r\n        dpdtimeout=120s\r\n\r\n      # VPN Backup tunnel (to VPN GW Instance 1)\r\n      conn vpn-backup\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={0}\r\n        rightsubnet=192.168.0.0/16,10.100.0.0/16,10.200.0.0/16\r\n        rightid={0}\r\n\r\n  # strongSwan secrets\r\n  - path: /etc/ipsec.secrets\r\n    permissions: ''0600''\r\n    content: |\r\n      : PSK \"{1}\"\r\n\r\n  # FRR daemons config\r\n  - path: /etc/frr/daemons\r\n    content: |\r\n      zebra=yes\r\n      bgpd=yes\r\n      ospfd=no\r\n      ospf6d=no\r\n      ripd=no\r\n      ripngd=no\r\n      isisd=no\r\n      pimd=no\r\n      ldpd=no\r\n      nhrpd=no\r\n      eigrpd=no\r\n      babeld=no\r\n      sharpd=no\r\n      staticd=yes\r\n      pbrd=no\r\n      bfdd=no\r\n      fabricd=no\r\n      vrrpd=no\r\n      pathd=no\r\n\r\n  # FRR configuration - Advertise SPECIFIC routes (10.0.1.0/24, 10.0.2.0/24)\r\n  # __LOCAL_IP__ will be replaced at runtime with actual private IP\r\n  - path: /etc/frr/frr.conf\r\n    content: |\r\n      frr version 8.1\r\n      frr defaults traditional\r\n      hostname frr-router-backup\r\n      log syslog informational\r\n      service integrated-vtysh-config\r\n      !\r\n      ! Static routes for specific on-prem networks\r\n      ip route 10.0.1.0/24 Null0\r\n      ip route 10.0.2.0/24 Null0\r\n      !\r\n      ! Prefix list for specific routes only\r\n      ip prefix-list SPECIFICS seq 5 permit 10.0.1.0/24\r\n      ip prefix-list SPECIFICS seq 10 permit 10.0.2.0/24\r\n      !\r\n      ! Route-map for VPN backup: Only advertise specific routes\r\n      route-map TO_VPN_BACKUP permit 10\r\n        match ip address prefix-list SPECIFICS\r\n      route-map TO_VPN_BACKUP deny 20\r\n      !\r\n      ! BGP configuration\r\n      router bgp {2}\r\n        bgp router-id __LOCAL_IP__\r\n        no bgp ebgp-requires-policy\r\n        bgp log-neighbor-changes\r\n        !\r\n        ! VPN-BACKUP neighbor (VPN GW Instance 1) - receives SPECIFICS\r\n        neighbor {3} remote-as 65515\r\n        neighbor {3} ebgp-multihop 64\r\n        neighbor {3} update-source __LOCAL_IP__\r\n        neighbor {3} description VPN-BACKUP\r\n        !\r\n        address-family ipv4 unicast\r\n          redistribute static\r\n          neighbor {3} soft-reconfiguration inbound\r\n          neighbor {3} route-map TO_VPN_BACKUP out\r\n        exit-address-family\r\n      !\r\n      line vty\r\n      !\r\n\r\n  # Setup script - only replaces __LOCAL_IP__ and adds routes\r\n  - path: /opt/setup-vpn.sh\r\n    permissions: ''0755''\r\n    content: |\r\n      #!/bin/bash\r\n      set -e\r\n      \r\n      LOG=/var/log/vpn-setup.log\r\n      exec > >(tee -a $LOG) 2>&1\r\n      echo \"=== VPN-Backup Setup started at $(date) ===\"\r\n      \r\n      # Get local private IP\r\n      LOCAL_IP=$(ip -4 addr show eth0 | grep -oP ''(?<=inet\\s)\\d+(\\.\\d+){{3}}'' | head -1)\r\n      echo \"Local IP: $LOCAL_IP\"\r\n      \r\n      # Get default gateway\r\n      DEFAULT_GW=$(ip route | grep default | awk ''{{print $3}}'')\r\n      echo \"Default Gateway: $DEFAULT_GW\"\r\n      \r\n      # Replace __LOCAL_IP__ placeholder in FRR config\r\n      sed -i \"s/__LOCAL_IP__/$LOCAL_IP/g\" /etc/frr/frr.conf\r\n      \r\n      # Enable IP forwarding\r\n      echo ''net.ipv4.ip_forward=1'' >> /etc/sysctl.conf\r\n      sysctl -w net.ipv4.ip_forward=1\r\n      \r\n      echo \"Starting IPsec...\"\r\n      systemctl enable ipsec\r\n      systemctl restart ipsec\r\n      \r\n      # Wait for tunnel to establish\r\n      echo \"Waiting for IPsec tunnel...\"\r\n      sleep 20\r\n      ipsec status || true\r\n      \r\n      # Add route to BGP peer via default gateway\r\n      echo \"Adding route to BGP peer {3}...\"\r\n      ip route add {3}/32 via $DEFAULT_GW dev eth0 || true\r\n      \r\n      echo \"Starting FRR...\"\r\n      systemctl enable frr\r\n      systemctl restart frr\r\n      \r\n      # Wait for BGP to establish\r\n      sleep 20\r\n      \r\n      echo \"=== Setup complete at $(date) ===\"\r\n      echo \"\"\r\n      echo \"IPsec status:\"\r\n      ipsec status || true\r\n      echo \"\"\r\n      echo \"BGP summary:\"\r\n      vtysh -c \"show ip bgp summary\" || true\r\n\r\nruncmd:\r\n  - /opt/setup-vpn.sh\r\n', parameters('hubVpnGwPublicIp1'), parameters('vpnPsk'), string(variables('onpremAsn')), parameters('hubVpnGwBgpIp1'))]"
+            "cloudInitConfig": "[format('#cloud-config\r\npackage_update: true\r\npackage_upgrade: true\r\n\r\npackages:\r\n  - strongswan\r\n  - strongswan-pki\r\n  - libcharon-extra-plugins\r\n  - frr\r\n  - frr-pythontools\r\n  - netcat-openbsd\r\n\r\nwrite_files:\r\n  # strongSwan ipsec.conf - 3 tunnels to each hub''s VPN Gateway Instance 1\r\n  - path: /etc/ipsec.conf\r\n    content: |\r\n      config setup\r\n        charondebug=\"ike 1, knl 1\"\r\n\r\n      conn %default\r\n        ikelifetime=28800s\r\n        keylife=3600s\r\n        rekeymargin=3m\r\n        keyingtries=3\r\n        keyexchange=ikev2\r\n        authby=secret\r\n        ike=aes256-sha256-modp1024!\r\n        esp=aes256-sha256!\r\n        type=tunnel\r\n        auto=start\r\n        dpdaction=clear\r\n        dpddelay=30s\r\n        dpdtimeout=120s\r\n\r\n      # VPN Backup tunnel to Hub1 VPN GW Instance 1 (westus3)\r\n      conn vpn-backup-hub1\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={0}\r\n        rightsubnet=192.168.1.0/24,10.100.0.0/16,10.200.0.0/16\r\n        rightid={0}\r\n\r\n      # VPN Backup tunnel to Hub2 VPN GW Instance 1 (eastus2)\r\n      conn vpn-backup-hub2\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={4}\r\n        rightsubnet=192.168.2.0/24,10.110.0.0/16,10.210.0.0/16\r\n        rightid={4}\r\n\r\n      # VPN Backup tunnel to Hub3 VPN GW Instance 1 (westus)\r\n      conn vpn-backup-hub3\r\n        left=%defaultroute\r\n        leftsubnet=10.0.0.0/16\r\n        leftid=%any\r\n        right={6}\r\n        rightsubnet=192.168.3.0/24,10.120.0.0/16,10.220.0.0/16\r\n        rightid={6}\r\n\r\n  # strongSwan secrets\r\n  - path: /etc/ipsec.secrets\r\n    permissions: ''0600''\r\n    content: |\r\n      : PSK \"{1}\"\r\n\r\n  # FRR daemons config\r\n  - path: /etc/frr/daemons\r\n    content: |\r\n      zebra=yes\r\n      bgpd=yes\r\n      ospfd=no\r\n      ospf6d=no\r\n      ripd=no\r\n      ripngd=no\r\n      isisd=no\r\n      pimd=no\r\n      ldpd=no\r\n      nhrpd=no\r\n      eigrpd=no\r\n      babeld=no\r\n      sharpd=no\r\n      staticd=yes\r\n      pbrd=no\r\n      bfdd=no\r\n      fabricd=no\r\n      vrrpd=no\r\n      pathd=no\r\n\r\n  # FRR configuration - Advertise SPECIFIC routes (10.0.1.0/24, 10.0.2.0/24) to all 3 hubs\r\n  # __LOCAL_IP__ will be replaced at runtime with actual private IP\r\n  - path: /etc/frr/frr.conf\r\n    content: |\r\n      frr version 8.1\r\n      frr defaults traditional\r\n      hostname frr-router-backup\r\n      log syslog informational\r\n      service integrated-vtysh-config\r\n      !\r\n      ! Static routes for specific on-prem networks\r\n      ip route 10.0.1.0/24 Null0\r\n      ip route 10.0.2.0/24 Null0\r\n      !\r\n      ! Prefix list for specific routes only\r\n      ip prefix-list SPECIFICS seq 5 permit 10.0.1.0/24\r\n      ip prefix-list SPECIFICS seq 10 permit 10.0.2.0/24\r\n      !\r\n      ! Route-map for VPN backup: Only advertise specific routes\r\n      route-map TO_VPN_BACKUP permit 10\r\n        match ip address prefix-list SPECIFICS\r\n      route-map TO_VPN_BACKUP deny 20\r\n      !\r\n      ! BGP configuration\r\n      router bgp {2}\r\n        bgp router-id __LOCAL_IP__\r\n        no bgp ebgp-requires-policy\r\n        bgp log-neighbor-changes\r\n        !\r\n        ! Hub1 VPN-BACKUP neighbor (VPN GW Instance 1)\r\n        neighbor {3} remote-as 65515\r\n        neighbor {3} ebgp-multihop 64\r\n        neighbor {3} update-source __LOCAL_IP__\r\n        neighbor {3} timers 3 9\r\n        neighbor {3} description VPN-BACKUP-HUB1\r\n        !\r\n        ! Hub2 VPN-BACKUP neighbor (VPN GW Instance 1)\r\n        neighbor {5} remote-as 65515\r\n        neighbor {5} ebgp-multihop 64\r\n        neighbor {5} update-source __LOCAL_IP__\r\n        neighbor {5} timers 3 9\r\n        neighbor {5} description VPN-BACKUP-HUB2\r\n        !\r\n        ! Hub3 VPN-BACKUP neighbor (VPN GW Instance 1)\r\n        neighbor {7} remote-as 65515\r\n        neighbor {7} ebgp-multihop 64\r\n        neighbor {7} update-source __LOCAL_IP__\r\n        neighbor {7} timers 3 9\r\n        neighbor {7} description VPN-BACKUP-HUB3\r\n        !\r\n        address-family ipv4 unicast\r\n          redistribute static\r\n          neighbor {3} soft-reconfiguration inbound\r\n          neighbor {3} route-map TO_VPN_BACKUP out\r\n          neighbor {5} soft-reconfiguration inbound\r\n          neighbor {5} route-map TO_VPN_BACKUP out\r\n          neighbor {7} soft-reconfiguration inbound\r\n          neighbor {7} route-map TO_VPN_BACKUP out\r\n        exit-address-family\r\n      !\r\n      line vty\r\n      !\r\n\r\n  # Setup script - only replaces __LOCAL_IP__ and adds routes\r\n  - path: /opt/setup-vpn.sh\r\n    permissions: ''0755''\r\n    content: |\r\n      #!/bin/bash\r\n      set -e\r\n      \r\n      LOG=/var/log/vpn-setup.log\r\n      exec > >(tee -a $LOG) 2>&1\r\n      echo \"=== VPN-Backup Multi-Hub Setup started at $(date) ===\"\r\n      \r\n      # Get local private IP\r\n      LOCAL_IP=$(ip -4 addr show eth0 | grep -oP ''(?<=inet\\s)\\d+(\\.\\d+){{3}}'' | head -1)\r\n      echo \"Local IP: $LOCAL_IP\"\r\n      \r\n      # Get default gateway\r\n      DEFAULT_GW=$(ip route | grep default | awk ''{{print $3}}'')\r\n      echo \"Default Gateway: $DEFAULT_GW\"\r\n      \r\n      # Replace __LOCAL_IP__ placeholder in FRR config\r\n      sed -i \"s/__LOCAL_IP__/$LOCAL_IP/g\" /etc/frr/frr.conf\r\n      \r\n      # Enable IP forwarding\r\n      echo ''net.ipv4.ip_forward=1'' >> /etc/sysctl.conf\r\n      sysctl -w net.ipv4.ip_forward=1\r\n      \r\n      echo \"Starting IPsec...\"\r\n      systemctl enable ipsec\r\n      systemctl restart ipsec\r\n      \r\n      # Wait for tunnels to establish\r\n      echo \"Waiting for IPsec tunnels...\"\r\n      sleep 30\r\n      ipsec status || true\r\n      \r\n      # Add routes to all 3 BGP peers via default gateway\r\n      echo \"Adding routes to BGP peers...\"\r\n      ip route add {3}/32 via $DEFAULT_GW dev eth0 || true\r\n      ip route add {5}/32 via $DEFAULT_GW dev eth0 || true\r\n      ip route add {7}/32 via $DEFAULT_GW dev eth0 || true\r\n      \r\n      echo \"Starting FRR...\"\r\n      systemctl enable frr\r\n      systemctl restart frr\r\n      \r\n      # Wait for BGP to establish\r\n      sleep 30\r\n      \r\n      echo \"=== Setup complete at $(date) ===\"\r\n      echo \"\"\r\n      echo \"IPsec status:\"\r\n      ipsec status || true\r\n      echo \"\"\r\n      echo \"BGP summary:\"\r\n      vtysh -c \"show ip bgp summary\" || true\r\n\r\nruncmd:\r\n  - /opt/setup-vpn.sh\r\n', parameters('hubVpnGwPublicIp1'), parameters('vpnPsk'), string(variables('onpremAsn')), parameters('hubVpnGwBgpIp1'), parameters('hub2VpnGwPublicIp1'), parameters('hub2VpnGwBgpIp1'), parameters('hub3VpnGwPublicIp1'), parameters('hub3VpnGwBgpIp1'))]"
           },
           "resources": [
             {
@@ -822,7 +1162,9 @@
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment')]"
       ]
     },
     {
@@ -1049,6 +1391,452 @@
       ]
     },
     {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "vpn-sites-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vwanName": {
+            "value": "[parameters('vwanName')]"
+          },
+          "hub2VpnGwName": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.vpnGatewayName.value]"
+          },
+          "onpremPublicIp": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment'), '2025-04-01').outputs.publicIpAddress.value]"
+          },
+          "onpremPublicIp2": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment'), '2025-04-01').outputs.publicIpAddress.value]"
+          },
+          "onpremBgpIp": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment'), '2025-04-01').outputs.privateIpAddress.value]"
+          },
+          "onpremBgpIp2": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment'), '2025-04-01').outputs.privateIpAddress.value]"
+          },
+          "vpnPsk": {
+            "value": "[parameters('vpnPsk')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "3123467084607652203"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "vwanName": {
+              "type": "string"
+            },
+            "hub2VpnGwName": {
+              "type": "string"
+            },
+            "onpremPublicIp": {
+              "type": "string"
+            },
+            "onpremPublicIp2": {
+              "type": "string"
+            },
+            "onpremBgpIp": {
+              "type": "string"
+            },
+            "onpremBgpIp2": {
+              "type": "string"
+            },
+            "vpnPsk": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "onpremAsn": 65001
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/vpnSites",
+              "apiVersion": "2023-11-01",
+              "name": "er-path-site-hub2",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "deviceProperties": {
+                  "deviceVendor": "FRRouting",
+                  "deviceModel": "strongSwan-ER-Hub2",
+                  "linkSpeedInMbps": 1000
+                },
+                "vpnSiteLinks": [
+                  {
+                    "name": "link-er-primary-hub2",
+                    "properties": {
+                      "ipAddress": "[parameters('onpremPublicIp')]",
+                      "bgpProperties": {
+                        "asn": "[variables('onpremAsn')]",
+                        "bgpPeeringAddress": "[parameters('onpremBgpIp')]"
+                      },
+                      "linkProperties": {
+                        "linkSpeedInMbps": 1000
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/vpnSites",
+              "apiVersion": "2023-11-01",
+              "name": "vpn-backup-site-hub2",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "deviceProperties": {
+                  "deviceVendor": "FRRouting",
+                  "deviceModel": "strongSwan-VPN-Hub2",
+                  "linkSpeedInMbps": 100
+                },
+                "vpnSiteLinks": [
+                  {
+                    "name": "link-vpn-backup-hub2",
+                    "properties": {
+                      "ipAddress": "[parameters('onpremPublicIp2')]",
+                      "bgpProperties": {
+                        "asn": "[variables('onpremAsn')]",
+                        "bgpPeeringAddress": "[parameters('onpremBgpIp2')]"
+                      },
+                      "linkProperties": {
+                        "linkSpeedInMbps": 100
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/vpnGateways/vpnConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hub2VpnGwName'), 'conn-er-path-hub2')]",
+              "properties": {
+                "remoteVpnSite": {
+                  "id": "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub2')]"
+                },
+                "vpnLinkConnections": [
+                  {
+                    "name": "link-er-primary-hub2",
+                    "properties": {
+                      "vpnSiteLink": {
+                        "id": "[reference(resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub2'), '2023-11-01').vpnSiteLinks[0].id]"
+                      },
+                      "sharedKey": "[parameters('vpnPsk')]",
+                      "enableBgp": true,
+                      "vpnConnectionProtocolType": "IKEv2",
+                      "connectionBandwidth": 1000,
+                      "routingWeight": 10
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub2')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/vpnGateways/vpnConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hub2VpnGwName'), 'conn-vpn-backup-hub2')]",
+              "properties": {
+                "remoteVpnSite": {
+                  "id": "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub2')]"
+                },
+                "vpnLinkConnections": [
+                  {
+                    "name": "link-vpn-backup-hub2",
+                    "properties": {
+                      "vpnSiteLink": {
+                        "id": "[reference(resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub2'), '2023-11-01').vpnSiteLinks[0].id]"
+                      },
+                      "sharedKey": "[parameters('vpnPsk')]",
+                      "enableBgp": true,
+                      "vpnConnectionProtocolType": "IKEv2",
+                      "connectionBandwidth": 100,
+                      "routingWeight": 1
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub2VpnGwName'), 'conn-er-path-hub2')]",
+                "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub2')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vpnSiteErPathHub2Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub2')]"
+            },
+            "vpnSiteVpnBackupHub2Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub2')]"
+            },
+            "connectionErPathHub2Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub2VpnGwName'), 'conn-er-path-hub2')]"
+            },
+            "connectionVpnBackupHub2Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub2VpnGwName'), 'conn-vpn-backup-hub2')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "vpn-sites-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vwanName": {
+            "value": "[parameters('vwanName')]"
+          },
+          "hub3VpnGwName": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.vpnGatewayName.value]"
+          },
+          "onpremPublicIp": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment'), '2025-04-01').outputs.publicIpAddress.value]"
+          },
+          "onpremPublicIp2": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment'), '2025-04-01').outputs.publicIpAddress.value]"
+          },
+          "onpremBgpIp": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment'), '2025-04-01').outputs.privateIpAddress.value]"
+          },
+          "onpremBgpIp2": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment'), '2025-04-01').outputs.privateIpAddress.value]"
+          },
+          "vpnPsk": {
+            "value": "[parameters('vpnPsk')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "1255953911372299299"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "vwanName": {
+              "type": "string"
+            },
+            "hub3VpnGwName": {
+              "type": "string"
+            },
+            "onpremPublicIp": {
+              "type": "string"
+            },
+            "onpremPublicIp2": {
+              "type": "string"
+            },
+            "onpremBgpIp": {
+              "type": "string"
+            },
+            "onpremBgpIp2": {
+              "type": "string"
+            },
+            "vpnPsk": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "onpremAsn": 65001
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/vpnSites",
+              "apiVersion": "2023-11-01",
+              "name": "er-path-site-hub3",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "deviceProperties": {
+                  "deviceVendor": "FRRouting",
+                  "deviceModel": "strongSwan-ER-Hub3",
+                  "linkSpeedInMbps": 1000
+                },
+                "vpnSiteLinks": [
+                  {
+                    "name": "link-er-primary-hub3",
+                    "properties": {
+                      "ipAddress": "[parameters('onpremPublicIp')]",
+                      "bgpProperties": {
+                        "asn": "[variables('onpremAsn')]",
+                        "bgpPeeringAddress": "[parameters('onpremBgpIp')]"
+                      },
+                      "linkProperties": {
+                        "linkSpeedInMbps": 1000
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/vpnSites",
+              "apiVersion": "2023-11-01",
+              "name": "vpn-backup-site-hub3",
+              "location": "[parameters('location')]",
+              "properties": {
+                "virtualWan": {
+                  "id": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+                },
+                "deviceProperties": {
+                  "deviceVendor": "FRRouting",
+                  "deviceModel": "strongSwan-VPN-Hub3",
+                  "linkSpeedInMbps": 100
+                },
+                "vpnSiteLinks": [
+                  {
+                    "name": "link-vpn-backup-hub3",
+                    "properties": {
+                      "ipAddress": "[parameters('onpremPublicIp2')]",
+                      "bgpProperties": {
+                        "asn": "[variables('onpremAsn')]",
+                        "bgpPeeringAddress": "[parameters('onpremBgpIp2')]"
+                      },
+                      "linkProperties": {
+                        "linkSpeedInMbps": 100
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/vpnGateways/vpnConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hub3VpnGwName'), 'conn-er-path-hub3')]",
+              "properties": {
+                "remoteVpnSite": {
+                  "id": "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub3')]"
+                },
+                "vpnLinkConnections": [
+                  {
+                    "name": "link-er-primary-hub3",
+                    "properties": {
+                      "vpnSiteLink": {
+                        "id": "[reference(resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub3'), '2023-11-01').vpnSiteLinks[0].id]"
+                      },
+                      "sharedKey": "[parameters('vpnPsk')]",
+                      "enableBgp": true,
+                      "vpnConnectionProtocolType": "IKEv2",
+                      "connectionBandwidth": 1000,
+                      "routingWeight": 10
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub3')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/vpnGateways/vpnConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hub3VpnGwName'), 'conn-vpn-backup-hub3')]",
+              "properties": {
+                "remoteVpnSite": {
+                  "id": "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub3')]"
+                },
+                "vpnLinkConnections": [
+                  {
+                    "name": "link-vpn-backup-hub3",
+                    "properties": {
+                      "vpnSiteLink": {
+                        "id": "[reference(resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub3'), '2023-11-01').vpnSiteLinks[0].id]"
+                      },
+                      "sharedKey": "[parameters('vpnPsk')]",
+                      "enableBgp": true,
+                      "vpnConnectionProtocolType": "IKEv2",
+                      "connectionBandwidth": 100,
+                      "routingWeight": 1
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub3VpnGwName'), 'conn-er-path-hub3')]",
+                "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub3')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vpnSiteErPathHub3Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnSites', 'er-path-site-hub3')]"
+            },
+            "vpnSiteVpnBackupHub3Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnSites', 'vpn-backup-site-hub3')]"
+            },
+            "connectionErPathHub3Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub3VpnGwName'), 'conn-er-path-hub3')]"
+            },
+            "connectionVpnBackupHub3Id": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/vpnGateways/vpnConnections', parameters('hub3VpnGwName'), 'conn-vpn-backup-hub3')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-deployment')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'frr-vm-backup-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment')]"
+      ]
+    },
+    {
       "condition": "[parameters('enableFirewall')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
@@ -1238,6 +2026,390 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableFirewall')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "firewall-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub2Location')]"
+          },
+          "hubName": {
+            "value": "[parameters('hub2Name')]"
+          },
+          "firewallSku": {
+            "value": "[parameters('firewallSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "741839861451567282"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "firewallSku": {
+              "type": "string"
+            },
+            "hubName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/firewallPolicies",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-fwpolicy', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "tier": "[parameters('firewallSku')]"
+                },
+                "dnsSettings": {
+                  "enableProxy": true
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/firewallPolicies/ruleCollectionGroups",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', format('{0}-fwpolicy', parameters('hubName')), 'NetworkRuleCollectionGroup')]",
+              "properties": {
+                "priority": 200,
+                "ruleCollections": [
+                  {
+                    "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+                    "name": "AllowAll-Lab",
+                    "priority": 100,
+                    "action": {
+                      "type": "Allow"
+                    },
+                    "rules": [
+                      {
+                        "ruleType": "NetworkRule",
+                        "name": "AnyToAny",
+                        "description": "Allow all traffic for lab testing",
+                        "ipProtocols": [
+                          "Any"
+                        ],
+                        "sourceAddresses": [
+                          "*"
+                        ],
+                        "destinationAddresses": [
+                          "*"
+                        ],
+                        "destinationPorts": [
+                          "*"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/azureFirewalls",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-azfw', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "AZFW_Hub",
+                  "tier": "[parameters('firewallSku')]"
+                },
+                "virtualHub": {
+                  "id": "[resourceId('Microsoft.Network/virtualHubs', parameters('hubName'))]"
+                },
+                "hubIPAddresses": {
+                  "publicIPs": {
+                    "count": 1
+                  }
+                },
+                "firewallPolicy": {
+                  "id": "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('{0}-{1}-Logs', parameters('hubName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Network/azureFirewalls/{0}', format('{0}-azfw', parameters('hubName')))]",
+              "name": "toLogAnalytics",
+              "properties": {
+                "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]",
+                "logs": [
+                  {
+                    "category": "AzureFirewallApplicationRule",
+                    "enabled": true
+                  },
+                  {
+                    "category": "AzureFirewallNetworkRule",
+                    "enabled": true
+                  },
+                  {
+                    "category": "AzureFirewallDnsProxy",
+                    "enabled": true
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "firewallId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName')))]"
+            },
+            "firewallPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName'))), '2023-11-01').hubIPAddresses.privateIPAddress]"
+            },
+            "logWorkspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableFirewall')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "firewall-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub3Location')]"
+          },
+          "hubName": {
+            "value": "[parameters('hub3Name')]"
+          },
+          "firewallSku": {
+            "value": "[parameters('firewallSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "741839861451567282"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "firewallSku": {
+              "type": "string"
+            },
+            "hubName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/firewallPolicies",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-fwpolicy', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "tier": "[parameters('firewallSku')]"
+                },
+                "dnsSettings": {
+                  "enableProxy": true
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/firewallPolicies/ruleCollectionGroups",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', format('{0}-fwpolicy', parameters('hubName')), 'NetworkRuleCollectionGroup')]",
+              "properties": {
+                "priority": 200,
+                "ruleCollections": [
+                  {
+                    "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+                    "name": "AllowAll-Lab",
+                    "priority": 100,
+                    "action": {
+                      "type": "Allow"
+                    },
+                    "rules": [
+                      {
+                        "ruleType": "NetworkRule",
+                        "name": "AnyToAny",
+                        "description": "Allow all traffic for lab testing",
+                        "ipProtocols": [
+                          "Any"
+                        ],
+                        "sourceAddresses": [
+                          "*"
+                        ],
+                        "destinationAddresses": [
+                          "*"
+                        ],
+                        "destinationPorts": [
+                          "*"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/azureFirewalls",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-azfw', parameters('hubName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "AZFW_Hub",
+                  "tier": "[parameters('firewallSku')]"
+                },
+                "virtualHub": {
+                  "id": "[resourceId('Microsoft.Network/virtualHubs', parameters('hubName'))]"
+                },
+                "hubIPAddresses": {
+                  "publicIPs": {
+                    "count": 1
+                  }
+                },
+                "firewallPolicy": {
+                  "id": "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/firewallPolicies', format('{0}-fwpolicy', parameters('hubName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('{0}-{1}-Logs', parameters('hubName'), parameters('location'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[format('Microsoft.Network/azureFirewalls/{0}', format('{0}-azfw', parameters('hubName')))]",
+              "name": "toLogAnalytics",
+              "properties": {
+                "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]",
+                "logs": [
+                  {
+                    "category": "AzureFirewallApplicationRule",
+                    "enabled": true
+                  },
+                  {
+                    "category": "AzureFirewallNetworkRule",
+                    "enabled": true
+                  },
+                  {
+                    "category": "AzureFirewallDnsProxy",
+                    "enabled": true
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "AllMetrics",
+                    "enabled": true
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "firewallId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName')))]"
+            },
+            "firewallPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/azureFirewalls', format('{0}-azfw', parameters('hubName'))), '2023-11-01').hubIPAddresses.privateIPAddress]"
+            },
+            "logWorkspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-{1}-Logs', parameters('hubName'), parameters('location')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment')]"
       ]
     },
     {
@@ -1612,6 +2784,264 @@
       ]
     },
     {
+      "condition": "[parameters('enableRouteMaps')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "routemaps-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "hubName": {
+            "value": "[parameters('hub2Name')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "6820540387563639840"
+            }
+          },
+          "parameters": {
+            "hubName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualHubs/routeMaps",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hubName'), 'filter-vpn-more-specifics')]",
+              "properties": {
+                "rules": [
+                  {
+                    "name": "deny-onprem-more-specifics",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "10.0.1.0/24",
+                          "10.0.2.0/24"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Drop"
+                      }
+                    ],
+                    "nextStepIfMatched": "Terminate"
+                  },
+                  {
+                    "name": "allow-all-other",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "0.0.0.0/0"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Continue"
+                      }
+                    ],
+                    "nextStepIfMatched": "Continue"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/routeMaps",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hubName'), 'prepend-vpn-routes')]",
+              "properties": {
+                "rules": [
+                  {
+                    "name": "prepend-as-path",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Replace",
+                        "parameters": [
+                          {
+                            "asPath": [
+                              "65020",
+                              "65020",
+                              "65020"
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "nextStepIfMatched": "Continue"
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "routeMapFilterId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs/routeMaps', parameters('hubName'), 'filter-vpn-more-specifics')]"
+            },
+            "routeMapPrependId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs/routeMaps', parameters('hubName'), 'prepend-vpn-routes')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpn-sites-hub2-deployment')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableRouteMaps')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "routemaps-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "hubName": {
+            "value": "[parameters('hub3Name')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "6820540387563639840"
+            }
+          },
+          "parameters": {
+            "hubName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualHubs/routeMaps",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hubName'), 'filter-vpn-more-specifics')]",
+              "properties": {
+                "rules": [
+                  {
+                    "name": "deny-onprem-more-specifics",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "10.0.1.0/24",
+                          "10.0.2.0/24"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Drop"
+                      }
+                    ],
+                    "nextStepIfMatched": "Terminate"
+                  },
+                  {
+                    "name": "allow-all-other",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "0.0.0.0/0"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Continue"
+                      }
+                    ],
+                    "nextStepIfMatched": "Continue"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/routeMaps",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', parameters('hubName'), 'prepend-vpn-routes')]",
+              "properties": {
+                "rules": [
+                  {
+                    "name": "prepend-as-path",
+                    "matchCriteria": [
+                      {
+                        "matchCondition": "Contains",
+                        "routePrefix": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Replace",
+                        "parameters": [
+                          {
+                            "asPath": [
+                              "65020",
+                              "65020",
+                              "65020"
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "nextStepIfMatched": "Continue"
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "routeMapFilterId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs/routeMaps', parameters('hubName'), 'filter-vpn-more-specifics')]"
+            },
+            "routeMapPrependId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualHubs/routeMaps', parameters('hubName'), 'prepend-vpn-routes')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpn-sites-hub3-deployment')]"
+      ]
+    },
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "spokes-deployment",
@@ -1796,6 +3226,380 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "spokes-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub2Location')]"
+          },
+          "hub2Id": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub2Id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "11005727459919751453"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "hub2Id": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "spoke3-vnet",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.110.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "workloads",
+                    "properties": {
+                      "addressPrefix": "10.110.1.0/24",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub2-nsg')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub2-nsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "spoke4-vnet",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.210.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "workloads",
+                    "properties": {
+                      "addressPrefix": "10.210.1.0/24",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub2-nsg')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub2-nsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2023-11-01",
+              "name": "spoke-hub2-nsg",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowSSH",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "22"
+                    }
+                  },
+                  {
+                    "name": "AllowICMP",
+                    "properties": {
+                      "priority": 110,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Icmp",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/hubVirtualNetworkConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/conn-spoke3', split(parameters('hub2Id'), '/')[8])]",
+              "properties": {
+                "remoteVirtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke3-vnet')]"
+                },
+                "allowHubToRemoteVnetTransit": true,
+                "allowRemoteVnetToUseHubVnetGateways": true,
+                "enableInternetSecurity": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'spoke3-vnet')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/hubVirtualNetworkConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/conn-spoke4', split(parameters('hub2Id'), '/')[8])]",
+              "properties": {
+                "remoteVirtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke4-vnet')]"
+                },
+                "allowHubToRemoteVnetTransit": true,
+                "allowRemoteVnetToUseHubVnetGateways": true,
+                "enableInternetSecurity": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualHubs/hubVirtualNetworkConnections', split(format('{0}/conn-spoke3', split(parameters('hub2Id'), '/')[8]), '/')[0], split(format('{0}/conn-spoke3', split(parameters('hub2Id'), '/')[8]), '/')[1])]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'spoke4-vnet')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "spoke3VnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke3-vnet')]"
+            },
+            "spoke4VnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke4-vnet')]"
+            },
+            "spoke3SubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', 'spoke3-vnet'), '2023-11-01').subnets[0].id]"
+            },
+            "spoke4SubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', 'spoke4-vnet'), '2023-11-01').subnets[0].id]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "spokes-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub3Location')]"
+          },
+          "hub3Id": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub3Id.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "15475666300802348613"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "hub3Id": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "spoke5-vnet",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.120.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "workloads",
+                    "properties": {
+                      "addressPrefix": "10.120.1.0/24",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub3-nsg')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub3-nsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "spoke6-vnet",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.220.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "workloads",
+                    "properties": {
+                      "addressPrefix": "10.220.1.0/24",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub3-nsg')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'spoke-hub3-nsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2023-11-01",
+              "name": "spoke-hub3-nsg",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowSSH",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "22"
+                    }
+                  },
+                  {
+                    "name": "AllowICMP",
+                    "properties": {
+                      "priority": 110,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Icmp",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/hubVirtualNetworkConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/conn-spoke5', split(parameters('hub3Id'), '/')[8])]",
+              "properties": {
+                "remoteVirtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke5-vnet')]"
+                },
+                "allowHubToRemoteVnetTransit": true,
+                "allowRemoteVnetToUseHubVnetGateways": true,
+                "enableInternetSecurity": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'spoke5-vnet')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualHubs/hubVirtualNetworkConnections",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/conn-spoke6', split(parameters('hub3Id'), '/')[8])]",
+              "properties": {
+                "remoteVirtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke6-vnet')]"
+                },
+                "allowHubToRemoteVnetTransit": true,
+                "allowRemoteVnetToUseHubVnetGateways": true,
+                "enableInternetSecurity": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualHubs/hubVirtualNetworkConnections', split(format('{0}/conn-spoke5', split(parameters('hub3Id'), '/')[8]), '/')[0], split(format('{0}/conn-spoke5', split(parameters('hub3Id'), '/')[8]), '/')[1])]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'spoke6-vnet')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "spoke5VnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke5-vnet')]"
+            },
+            "spoke6VnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', 'spoke6-vnet')]"
+            },
+            "spoke5SubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', 'spoke5-vnet'), '2023-11-01').subnets[0].id]"
+            },
+            "spoke6SubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', 'spoke6-vnet'), '2023-11-01').subnets[0].id]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment')]"
       ]
     },
     {
@@ -2068,6 +3872,406 @@
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-deployment')]"
       ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "workload-vms-hub2-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub2Location')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "vmSize": {
+            "value": "[parameters('vmSize')]"
+          },
+          "spoke3SubnetId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub2-deployment'), '2025-04-01').outputs.spoke3SubnetId.value]"
+          },
+          "spoke4SubnetId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub2-deployment'), '2025-04-01').outputs.spoke4SubnetId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "1243665843325097795"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "adminUsername": {
+              "type": "string"
+            },
+            "adminPassword": {
+              "type": "securestring"
+            },
+            "vmSize": {
+              "type": "string",
+              "defaultValue": "Standard_B2s"
+            },
+            "spoke3SubnetId": {
+              "type": "string"
+            },
+            "spoke4SubnetId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2023-11-01",
+              "name": "spoke3-vm-nic",
+              "location": "[parameters('location')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "10.110.1.10",
+                      "subnet": {
+                        "id": "[parameters('spoke3SubnetId')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2023-09-01",
+              "name": "spoke3-vm",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                  "computerName": "spoke3-vm",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "0001-com-ubuntu-server-jammy",
+                    "sku": "22_04-lts-gen2",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'spoke3-vm-nic')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'spoke3-vm-nic')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2023-11-01",
+              "name": "spoke4-vm-nic",
+              "location": "[parameters('location')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "10.210.1.10",
+                      "subnet": {
+                        "id": "[parameters('spoke4SubnetId')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2023-09-01",
+              "name": "spoke4-vm",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                  "computerName": "spoke4-vm",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "0001-com-ubuntu-server-jammy",
+                    "sku": "22_04-lts-gen2",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'spoke4-vm-nic')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'spoke4-vm-nic')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "spoke3VmPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', 'spoke3-vm-nic'), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+            },
+            "spoke4VmPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', 'spoke4-vm-nic'), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub2-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "workload-vms-hub3-deployment",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('hub3Location')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "vmSize": {
+            "value": "[parameters('vmSize')]"
+          },
+          "spoke5SubnetId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub3-deployment'), '2025-04-01').outputs.spoke5SubnetId.value]"
+          },
+          "spoke6SubnetId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub3-deployment'), '2025-04-01').outputs.spoke6SubnetId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.39.26.7824",
+              "templateHash": "16412686966604539261"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "adminUsername": {
+              "type": "string"
+            },
+            "adminPassword": {
+              "type": "securestring"
+            },
+            "vmSize": {
+              "type": "string",
+              "defaultValue": "Standard_B2s"
+            },
+            "spoke5SubnetId": {
+              "type": "string"
+            },
+            "spoke6SubnetId": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2023-11-01",
+              "name": "spoke5-vm-nic",
+              "location": "[parameters('location')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "10.120.1.10",
+                      "subnet": {
+                        "id": "[parameters('spoke5SubnetId')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2023-09-01",
+              "name": "spoke5-vm",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                  "computerName": "spoke5-vm",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "0001-com-ubuntu-server-jammy",
+                    "sku": "22_04-lts-gen2",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'spoke5-vm-nic')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'spoke5-vm-nic')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2023-11-01",
+              "name": "spoke6-vm-nic",
+              "location": "[parameters('location')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "10.220.1.10",
+                      "subnet": {
+                        "id": "[parameters('spoke6SubnetId')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2023-09-01",
+              "name": "spoke6-vm",
+              "location": "[parameters('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "osProfile": {
+                  "computerName": "spoke6-vm",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "0001-com-ubuntu-server-jammy",
+                    "sku": "22_04-lts-gen2",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'spoke6-vm-nic')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'spoke6-vm-nic')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "spoke5VmPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', 'spoke5-vm-nic'), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+            },
+            "spoke6VmPrivateIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/networkInterfaces', 'spoke6-vm-nic'), '2023-11-01').ipConfigurations[0].properties.privateIPAddress]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'spokes-hub3-deployment')]"
+      ]
     }
   ],
   "outputs": {
@@ -2078,6 +4282,14 @@
     "hubId": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hubId.value]"
+    },
+    "hub2Id": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub2Id.value]"
+    },
+    "hub3Id": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'network-deployment'), '2025-04-01').outputs.hub3Id.value]"
     },
     "frrVmPublicIp": {
       "type": "string",
@@ -2103,6 +4315,22 @@
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
     },
+    "hub2VpnGwPublicIp0": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.publicIpAddress0.value]"
+    },
+    "hub2VpnGwPublicIp1": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub2-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
+    },
+    "hub3VpnGwPublicIp0": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.publicIpAddress0.value]"
+    },
+    "hub3VpnGwPublicIp1": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'vpngw-hub3-deployment'), '2025-04-01').outputs.publicIpAddress1.value]"
+    },
     "onpremVmPrivateIp": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-deployment'), '2025-04-01').outputs.onpremVmPrivateIp.value]"
@@ -2114,6 +4342,22 @@
     "spoke2VmPrivateIp": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-deployment'), '2025-04-01').outputs.spoke2VmPrivateIp.value]"
+    },
+    "spoke3VmPrivateIp": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-hub2-deployment'), '2025-04-01').outputs.spoke3VmPrivateIp.value]"
+    },
+    "spoke4VmPrivateIp": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-hub2-deployment'), '2025-04-01').outputs.spoke4VmPrivateIp.value]"
+    },
+    "spoke5VmPrivateIp": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-hub3-deployment'), '2025-04-01').outputs.spoke5VmPrivateIp.value]"
+    },
+    "spoke6VmPrivateIp": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'workload-vms-hub3-deployment'), '2025-04-01').outputs.spoke6VmPrivateIp.value]"
     }
   }
 }

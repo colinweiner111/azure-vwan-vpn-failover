@@ -1,11 +1,11 @@
 // =============================================================================
-// FRR/strongSwan VM Module - ER Path (Primary)
+// FRR/strongSwan VM Module - ER Path (Primary) - Multi-Hub
 // =============================================================================
 // Creates:
 // - Linux VM with FRRouting + strongSwan
 // - Cloud-init configuration for:
-//   * Single IPsec tunnel to vWAN VPN Gateway Instance 0
-//   * BGP to Instance 0 BGP peer, advertising aggregate 10.0.0.0/16
+//   * IPsec tunnels to each hub's vWAN VPN Gateway Instance 0
+//   * BGP peers to each Instance 0, advertising aggregate 10.0.0.0/16
 // =============================================================================
 
 param location string
@@ -18,9 +18,17 @@ param subnetId string
 @secure()
 param vpnPsk string
 
-// vWAN VPN Gateway Instance 0 (ER path)
+// Hub1 vWAN VPN Gateway Instance 0 (ER path)
 param hubVpnGwBgpIp0 string      // e.g., 192.168.1.13
 param hubVpnGwPublicIp0 string   // Instance 0 public IP
+
+// Hub2 vWAN VPN Gateway Instance 0 (ER path)
+param hub2VpnGwBgpIp0 string     // e.g., 192.168.2.13
+param hub2VpnGwPublicIp0 string  // Instance 0 public IP
+
+// Hub3 vWAN VPN Gateway Instance 0 (ER path)
+param hub3VpnGwBgpIp0 string     // e.g., 192.168.3.13
+param hub3VpnGwPublicIp0 string  // Instance 0 public IP
 
 var vmName = 'frr-router'
 var nicName = '${vmName}-nic'
@@ -68,10 +76,11 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
 }
 
 // =============================================================================
-// Cloud-init configuration for FRR + strongSwan (ER Path Only)
+// Cloud-init configuration for FRR + strongSwan (ER Path - Multi-Hub)
 // =============================================================================
 // Values are injected directly by Bicep format() function
 // Only __LOCAL_IP__ needs runtime detection and replacement
+// 3 IPsec tunnels (one per hub) + 3 BGP peers, all advertising 10.0.0.0/16
 // =============================================================================
 var cloudInitConfig = format('''#cloud-config
 package_update: true
@@ -86,7 +95,7 @@ packages:
   - netcat-openbsd
 
 write_files:
-  # strongSwan ipsec.conf - Single tunnel to VPN Gateway Instance 0
+  # strongSwan ipsec.conf - 3 tunnels to each hub's VPN Gateway Instance 0
   - path: /etc/ipsec.conf
     content: |
       config setup
@@ -107,14 +116,32 @@ write_files:
         dpddelay=30s
         dpdtimeout=120s
 
-      # ER Path tunnel (to VPN GW Instance 0)
-      conn er-path
+      # ER Path tunnel to Hub1 VPN GW Instance 0 (westus3)
+      conn er-path-hub1
         left=%defaultroute
         leftsubnet=10.0.0.0/16
         leftid=%any
         right={0}
-        rightsubnet=192.168.0.0/16,10.100.0.0/16,10.200.0.0/16
+        rightsubnet=192.168.1.0/24,10.100.0.0/16,10.200.0.0/16
         rightid={0}
+
+      # ER Path tunnel to Hub2 VPN GW Instance 0 (eastus2)
+      conn er-path-hub2
+        left=%defaultroute
+        leftsubnet=10.0.0.0/16
+        leftid=%any
+        right={4}
+        rightsubnet=192.168.2.0/24,10.110.0.0/16,10.210.0.0/16
+        rightid={4}
+
+      # ER Path tunnel to Hub3 VPN GW Instance 0 (westus)
+      conn er-path-hub3
+        left=%defaultroute
+        leftsubnet=10.0.0.0/16
+        leftid=%any
+        right={6}
+        rightsubnet=192.168.3.0/24,10.120.0.0/16,10.220.0.0/16
+        rightid={6}
 
   # strongSwan secrets
   - path: /etc/ipsec.secrets
@@ -145,7 +172,7 @@ write_files:
       vrrpd=no
       pathd=no
 
-  # FRR configuration - Advertise AGGREGATE route (10.0.0.0/16)
+  # FRR configuration - Advertise AGGREGATE route (10.0.0.0/16) to all 3 hubs
   # __LOCAL_IP__ will be replaced at runtime with actual private IP
   - path: /etc/frr/frr.conf
     content: |
@@ -172,17 +199,35 @@ write_files:
         no bgp ebgp-requires-policy
         bgp log-neighbor-changes
         !
-        ! ER-PATH neighbor (VPN GW Instance 0) - receives AGGREGATE
+        ! Hub1 ER-PATH neighbor (VPN GW Instance 0)
         neighbor {3} remote-as 65515
         neighbor {3} ebgp-multihop 64
         neighbor {3} update-source __LOCAL_IP__
         neighbor {3} timers 3 9
-        neighbor {3} description ER-PATH
+        neighbor {3} description ER-PATH-HUB1
+        !
+        ! Hub2 ER-PATH neighbor (VPN GW Instance 0)
+        neighbor {5} remote-as 65515
+        neighbor {5} ebgp-multihop 64
+        neighbor {5} update-source __LOCAL_IP__
+        neighbor {5} timers 3 9
+        neighbor {5} description ER-PATH-HUB2
+        !
+        ! Hub3 ER-PATH neighbor (VPN GW Instance 0)
+        neighbor {7} remote-as 65515
+        neighbor {7} ebgp-multihop 64
+        neighbor {7} update-source __LOCAL_IP__
+        neighbor {7} timers 3 9
+        neighbor {7} description ER-PATH-HUB3
         !
         address-family ipv4 unicast
           redistribute static
           neighbor {3} soft-reconfiguration inbound
           neighbor {3} route-map TO_ER_PATH out
+          neighbor {5} soft-reconfiguration inbound
+          neighbor {5} route-map TO_ER_PATH out
+          neighbor {7} soft-reconfiguration inbound
+          neighbor {7} route-map TO_ER_PATH out
         exit-address-family
       !
       line vty
@@ -197,7 +242,7 @@ write_files:
       
       LOG=/var/log/vpn-setup.log
       exec > >(tee -a $LOG) 2>&1
-      echo "=== ER-Path Setup started at $(date) ==="
+      echo "=== ER-Path Multi-Hub Setup started at $(date) ==="
       
       # Get local private IP
       LOCAL_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){{3}}' | head -1)
@@ -218,21 +263,23 @@ write_files:
       systemctl enable ipsec
       systemctl restart ipsec
       
-      # Wait for tunnel to establish
-      echo "Waiting for IPsec tunnel..."
-      sleep 20
+      # Wait for tunnels to establish
+      echo "Waiting for IPsec tunnels..."
+      sleep 30
       ipsec status || true
       
-      # Add route to BGP peer via default gateway
-      echo "Adding route to BGP peer {3}..."
+      # Add routes to all 3 BGP peers via default gateway
+      echo "Adding routes to BGP peers..."
       ip route add {3}/32 via $DEFAULT_GW dev eth0 || true
+      ip route add {5}/32 via $DEFAULT_GW dev eth0 || true
+      ip route add {7}/32 via $DEFAULT_GW dev eth0 || true
       
       echo "Starting FRR..."
       systemctl enable frr
       systemctl restart frr
       
       # Wait for BGP to establish
-      sleep 20
+      sleep 30
       
       echo "=== Setup complete at $(date) ==="
       echo ""
@@ -244,7 +291,7 @@ write_files:
 
 runcmd:
   - /opt/setup-vpn.sh
-''', hubVpnGwPublicIp0, vpnPsk, string(onpremAsn), hubVpnGwBgpIp0)
+''', hubVpnGwPublicIp0, vpnPsk, string(onpremAsn), hubVpnGwBgpIp0, hub2VpnGwPublicIp0, hub2VpnGwBgpIp0, hub3VpnGwPublicIp0, hub3VpnGwBgpIp0)
 
 // =============================================================================
 // Virtual Machine

@@ -84,17 +84,23 @@ Write-Host "  Bastion: $(if ($EnableBastion) { 'Enabled' } else { 'Disabled' })"
 Write-Host "  Route Maps: $EnableRouteMaps"
 
 Write-Host "`nLab Architecture:" -ForegroundColor Yellow
-Write-Host "  - Dual FRR VMs with dedicated IPsec tunnels to vWAN VPN Gateway:"
-Write-Host "    * frr-router (ER-PATH): Tunnel to Instance0, advertises 10.0.0.0/16"
-Write-Host "    * frr-router-backup (VPN): Tunnel to Instance1, advertises /24 specifics"
+Write-Host "  Hub1 (westus3) + Hub2 (eastus2) + Hub3 (westus) in single vWAN"
+Write-Host "  - 2 FRR VMs with 6 total IPsec tunnels (2 per hub):"
+Write-Host "    * frr-router (ER-PATH): 3 tunnels to Hub1/Hub2/Hub3 VPN GW Instance 0"
+Write-Host "      Advertises aggregate 10.0.0.0/16 via BGP"
+Write-Host "    * frr-router-backup (VPN): 3 tunnels to Hub1/Hub2/Hub3 VPN GW Instance 1"
+Write-Host "      Advertises specific /24 routes via BGP"
 Write-Host "  - LPM causes /24 routes to win over /16 aggregate"
-Write-Host "  - Demonstrates failover/failback behavior"
+Write-Host "  - Demonstrates failover/failback behavior across all 3 hubs"
 
 Write-Host "`nComponents to deploy:" -ForegroundColor Cyan
-Write-Host "  - Virtual WAN with Hub"
+Write-Host "  - Virtual WAN with Hub1 (westus3) + Hub2 (eastus2) + Hub3 (westus)"
 Write-Host "  - On-Prem VNet (10.0.0.0/16)"
-Write-Host "  - 2 FRR/strongSwan Router VMs (Ubuntu)"
-Write-Host "  - vWAN VPN Gateway (2 instances)"
+Write-Host "  - 2 FRR/strongSwan Router VMs (Ubuntu) - 6 tunnels total (2 per hub)"
+Write-Host "  - 3 vWAN VPN Gateways (2 instances each)"
+Write-Host "  - Spoke1/Spoke2 connected to Hub1"
+Write-Host "  - Spoke3/Spoke4 connected to Hub2"
+Write-Host "  - Spoke5/Spoke6 connected to Hub3"
 if ($EnableBastion) {
     Write-Host "  - Azure Bastion for VM access"
 }
@@ -108,10 +114,10 @@ if ($EnableRouteMaps) {
 $extraTime = 0
 if ($EnableFirewall) { $extraTime += 15 }
 if ($EnableBastion) { $extraTime += 5 }
-$estimatedMin = 30 + $extraTime
-$estimatedMax = 40 + $extraTime
+$estimatedMin = 35 + $extraTime
+$estimatedMax = 55 + $extraTime
 Write-Host "`nEstimated deployment time: $estimatedMin-$estimatedMax minutes" -ForegroundColor Yellow
-Write-Host "  (VPN Gateway: ~30 min)`n"
+Write-Host "  (3 VPN Gateways deploy in parallel: ~30 min)`n"
 
 $deploymentName = "vwan-failover-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
@@ -140,8 +146,10 @@ try {
         Write-Host "========================================" -ForegroundColor Cyan
         
         Write-Host "`nFRR Router VMs:" -ForegroundColor Yellow
-        Write-Host "  frr-router (ER-PATH):     10.0.0.4, BGP peer Instance0 (192.168.1.13)"
-        Write-Host "  frr-router-backup (VPN):  10.0.0.5, BGP peer Instance1 (192.168.1.12)"
+        Write-Host "  frr-router (ER-PATH):     3 tunnels to Hub1/Hub2/Hub3 Instance 0"
+        Write-Host "    Advertises 10.0.0.0/16 aggregate via BGP"
+        Write-Host "  frr-router-backup (VPN):  3 tunnels to Hub1/Hub2/Hub3 Instance 1"
+        Write-Host "    Advertises 10.0.1.0/24, 10.0.2.0/24 specifics via BGP"
         if ($EnableBastion) {
             Write-Host "  Access: Azure Bastion in onprem-vnet"
         } else {

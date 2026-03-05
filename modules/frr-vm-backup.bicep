@@ -1,11 +1,11 @@
 // =============================================================================
-// FRR/strongSwan VM Module - VPN Backup (Secondary)
+// FRR/strongSwan VM Module - VPN Backup (Secondary) - Multi-Hub
 // =============================================================================
 // Creates:
 // - Linux VM with FRRouting + strongSwan
 // - Cloud-init configuration for:
-//   * Single IPsec tunnel to vWAN VPN Gateway Instance 1
-//   * BGP to Instance 1 BGP peer, advertising specific routes 10.0.1.0/24, 10.0.2.0/24
+//   * IPsec tunnels to each hub's vWAN VPN Gateway Instance 1
+//   * BGP peers to each Instance 1, advertising specific routes 10.0.1.0/24, 10.0.2.0/24
 // =============================================================================
 
 param location string
@@ -18,9 +18,17 @@ param subnetId string
 @secure()
 param vpnPsk string
 
-// vWAN VPN Gateway Instance 1 (VPN backup)
+// Hub1 vWAN VPN Gateway Instance 1 (VPN backup)
 param hubVpnGwBgpIp1 string      // e.g., 192.168.1.12
 param hubVpnGwPublicIp1 string   // Instance 1 public IP
+
+// Hub2 vWAN VPN Gateway Instance 1 (VPN backup)
+param hub2VpnGwBgpIp1 string     // e.g., 192.168.2.12
+param hub2VpnGwPublicIp1 string  // Instance 1 public IP
+
+// Hub3 vWAN VPN Gateway Instance 1 (VPN backup)
+param hub3VpnGwBgpIp1 string     // e.g., 192.168.3.12
+param hub3VpnGwPublicIp1 string  // Instance 1 public IP
 
 var vmName = 'frr-router-backup'
 var nicName = '${vmName}-nic'
@@ -68,10 +76,11 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
 }
 
 // =============================================================================
-// Cloud-init configuration for FRR + strongSwan (VPN Backup Only)
+// Cloud-init configuration for FRR + strongSwan (VPN Backup - Multi-Hub)
 // =============================================================================
 // Values are injected directly by Bicep format() function
 // Only __LOCAL_IP__ needs runtime detection and replacement
+// 3 IPsec tunnels (one per hub) + 3 BGP peers, all advertising specifics
 // =============================================================================
 var cloudInitConfig = format('''#cloud-config
 package_update: true
@@ -86,7 +95,7 @@ packages:
   - netcat-openbsd
 
 write_files:
-  # strongSwan ipsec.conf - Single tunnel to VPN Gateway Instance 1
+  # strongSwan ipsec.conf - 3 tunnels to each hub's VPN Gateway Instance 1
   - path: /etc/ipsec.conf
     content: |
       config setup
@@ -107,14 +116,32 @@ write_files:
         dpddelay=30s
         dpdtimeout=120s
 
-      # VPN Backup tunnel (to VPN GW Instance 1)
-      conn vpn-backup
+      # VPN Backup tunnel to Hub1 VPN GW Instance 1 (westus3)
+      conn vpn-backup-hub1
         left=%defaultroute
         leftsubnet=10.0.0.0/16
         leftid=%any
         right={0}
-        rightsubnet=192.168.0.0/16,10.100.0.0/16,10.200.0.0/16
+        rightsubnet=192.168.1.0/24,10.100.0.0/16,10.200.0.0/16
         rightid={0}
+
+      # VPN Backup tunnel to Hub2 VPN GW Instance 1 (eastus2)
+      conn vpn-backup-hub2
+        left=%defaultroute
+        leftsubnet=10.0.0.0/16
+        leftid=%any
+        right={4}
+        rightsubnet=192.168.2.0/24,10.110.0.0/16,10.210.0.0/16
+        rightid={4}
+
+      # VPN Backup tunnel to Hub3 VPN GW Instance 1 (westus)
+      conn vpn-backup-hub3
+        left=%defaultroute
+        leftsubnet=10.0.0.0/16
+        leftid=%any
+        right={6}
+        rightsubnet=192.168.3.0/24,10.120.0.0/16,10.220.0.0/16
+        rightid={6}
 
   # strongSwan secrets
   - path: /etc/ipsec.secrets
@@ -145,7 +172,7 @@ write_files:
       vrrpd=no
       pathd=no
 
-  # FRR configuration - Advertise SPECIFIC routes (10.0.1.0/24, 10.0.2.0/24)
+  # FRR configuration - Advertise SPECIFIC routes (10.0.1.0/24, 10.0.2.0/24) to all 3 hubs
   # __LOCAL_IP__ will be replaced at runtime with actual private IP
   - path: /etc/frr/frr.conf
     content: |
@@ -174,17 +201,35 @@ write_files:
         no bgp ebgp-requires-policy
         bgp log-neighbor-changes
         !
-        ! VPN-BACKUP neighbor (VPN GW Instance 1) - receives SPECIFICS
+        ! Hub1 VPN-BACKUP neighbor (VPN GW Instance 1)
         neighbor {3} remote-as 65515
         neighbor {3} ebgp-multihop 64
         neighbor {3} update-source __LOCAL_IP__
         neighbor {3} timers 3 9
-        neighbor {3} description VPN-BACKUP
+        neighbor {3} description VPN-BACKUP-HUB1
+        !
+        ! Hub2 VPN-BACKUP neighbor (VPN GW Instance 1)
+        neighbor {5} remote-as 65515
+        neighbor {5} ebgp-multihop 64
+        neighbor {5} update-source __LOCAL_IP__
+        neighbor {5} timers 3 9
+        neighbor {5} description VPN-BACKUP-HUB2
+        !
+        ! Hub3 VPN-BACKUP neighbor (VPN GW Instance 1)
+        neighbor {7} remote-as 65515
+        neighbor {7} ebgp-multihop 64
+        neighbor {7} update-source __LOCAL_IP__
+        neighbor {7} timers 3 9
+        neighbor {7} description VPN-BACKUP-HUB3
         !
         address-family ipv4 unicast
           redistribute static
           neighbor {3} soft-reconfiguration inbound
           neighbor {3} route-map TO_VPN_BACKUP out
+          neighbor {5} soft-reconfiguration inbound
+          neighbor {5} route-map TO_VPN_BACKUP out
+          neighbor {7} soft-reconfiguration inbound
+          neighbor {7} route-map TO_VPN_BACKUP out
         exit-address-family
       !
       line vty
@@ -199,7 +244,7 @@ write_files:
       
       LOG=/var/log/vpn-setup.log
       exec > >(tee -a $LOG) 2>&1
-      echo "=== VPN-Backup Setup started at $(date) ==="
+      echo "=== VPN-Backup Multi-Hub Setup started at $(date) ==="
       
       # Get local private IP
       LOCAL_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){{3}}' | head -1)
@@ -220,21 +265,23 @@ write_files:
       systemctl enable ipsec
       systemctl restart ipsec
       
-      # Wait for tunnel to establish
-      echo "Waiting for IPsec tunnel..."
-      sleep 20
+      # Wait for tunnels to establish
+      echo "Waiting for IPsec tunnels..."
+      sleep 30
       ipsec status || true
       
-      # Add route to BGP peer via default gateway
-      echo "Adding route to BGP peer {3}..."
+      # Add routes to all 3 BGP peers via default gateway
+      echo "Adding routes to BGP peers..."
       ip route add {3}/32 via $DEFAULT_GW dev eth0 || true
+      ip route add {5}/32 via $DEFAULT_GW dev eth0 || true
+      ip route add {7}/32 via $DEFAULT_GW dev eth0 || true
       
       echo "Starting FRR..."
       systemctl enable frr
       systemctl restart frr
       
       # Wait for BGP to establish
-      sleep 20
+      sleep 30
       
       echo "=== Setup complete at $(date) ==="
       echo ""
@@ -246,7 +293,7 @@ write_files:
 
 runcmd:
   - /opt/setup-vpn.sh
-''', hubVpnGwPublicIp1, vpnPsk, string(onpremAsn), hubVpnGwBgpIp1)
+''', hubVpnGwPublicIp1, vpnPsk, string(onpremAsn), hubVpnGwBgpIp1, hub2VpnGwPublicIp1, hub2VpnGwBgpIp1, hub3VpnGwPublicIp1, hub3VpnGwBgpIp1)
 
 // =============================================================================
 // Virtual Machine

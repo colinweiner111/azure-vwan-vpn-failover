@@ -19,7 +19,7 @@ param(
     [string]$ResourceGroupName = "vwan-failover-lab",
     
     [Parameter(Mandatory=$false)]
-    [string]$HubName = "hub1",
+    [string]$HubName = "hub1-westus3",
     
     [Parameter(Mandatory=$false)]
     [string]$VpnConnectionName = "conn-vpn-backup",

@@ -2,7 +2,20 @@
 
 > **Lab Purpose**: Demonstrate route preference behavior between ExpressRoute and VPN backup connections, specifically the "failback" issue caused by Longest Prefix Match (LPM) when VPN advertises more-specific routes than ExpressRoute.
 
-This lab uses **two on-prem FRRouting/strongSwan VMs** with dedicated IPsec tunnels to simulate ExpressRoute and VPN backup scenarios, making it deployable without actual ExpressRoute circuits.
+This lab uses **two on-prem FRRouting/strongSwan VMs** with **six total IPsec tunnels** (two per hub — one ER-path, one VPN-backup) to simulate ExpressRoute and VPN backup scenarios across a **triple-hub vWAN** deployment, making it deployable without actual ExpressRoute circuits.
+
+## Architecture Overview
+
+| Component | Hub1 (westus3) | Hub2 (eastus2) | Hub3 (westus) |
+|-----------|---------------|----------------|---------------|
+| Hub address prefix | `192.168.1.0/24` | `192.168.2.0/24` | `192.168.3.0/24` |
+| Spoke VNets | spoke1 (`10.100.0.0/16`), spoke2 (`10.200.0.0/16`) | spoke3 (`10.110.0.0/16`), spoke4 (`10.210.0.0/16`) | spoke5 (`10.120.0.0/16`), spoke6 (`10.220.0.0/16`) |
+| ER-path tunnel | `frr-router` → GW Instance 0 | `frr-router` → GW Instance 0 | `frr-router` → GW Instance 0 |
+| VPN-backup tunnel | `frr-router-backup` → GW Instance 1 | `frr-router-backup` → GW Instance 1 | `frr-router-backup` → GW Instance 1 |
+| Workload VMs | `spoke1-vm`, `spoke2-vm` | `spoke3-vm`, `spoke4-vm` | `spoke5-vm`, `spoke6-vm` |
+
+Both FRR VMs sit in the shared **on-prem VNet** (`10.0.0.0/16`).
+All three hubs connect to the same Virtual WAN with hub-to-hub routing enabled.
 
 ## Problem Statement
 
@@ -21,10 +34,12 @@ LPM is evaluated before any "prefer ExpressRoute" behavior can help.
 
 ## Why Two VMs?
 
-Using separate VMs for each tunnel avoids Linux XFRM (IPsec policy) conflicts that occur when multiple tunnels have overlapping traffic selectors on the same host. Each VM has its own dedicated:
-- Public IP
-- IPsec tunnel to a specific VPN Gateway instance
-- BGP session with distinct route advertisements
+Using separate VMs for ER-path and VPN-backup tunnels avoids Linux XFRM (IPsec policy) conflicts that occur when multiple tunnels have overlapping traffic selectors on the same host. Each VM has:
+- Its own public IP
+- Three IPsec tunnels (one to each hub's VPN Gateway instance)
+- Three BGP sessions with distinct route advertisements
+
+The **frr-router** VM handles the ER-path role (aggregate /16 route, Instance 0) and the **frr-router-backup** VM handles the VPN-backup role (specific /24 routes, Instance 1) — both connecting to all three hubs.
 
 ## Why This Happens
 
@@ -116,34 +131,54 @@ cd vwan-er-vpn-failover-lab
 
 After deployment, note these key values:
 
+**Hub1 Resources:**
+
 | Resource | Output Name | Description |
 |----------|-------------|-------------|
 | frr-router | `frrVmPublicIp` | SSH to ER-PATH VM |
 | frr-router-backup | `frrVmBackupPublicIp` | SSH to VPN-BACKUP VM |
-| VPN GW Instance 0 | `hubVpnGwPublicIp0` | ER-PATH tunnel endpoint |
-| VPN GW Instance 1 | `hubVpnGwPublicIp1` | VPN-BACKUP tunnel endpoint |
+| Hub1 VPN GW Instance 0 | `hubVpnGwPublicIp0` | Hub1 ER-PATH tunnel endpoint |
+| Hub1 VPN GW Instance 1 | `hubVpnGwPublicIp1` | Hub1 VPN-BACKUP tunnel endpoint |
+
+**Hub2 Resources:**
+
+| Resource | Output Name | Description |
+|----------|-------------|-------------|
+| Hub2 VPN GW Instance 0 | `hub2VpnGwPublicIp0` | Hub2 ER-PATH tunnel endpoint |
+| Hub2 VPN GW Instance 1 | `hub2VpnGwPublicIp1` | Hub2 VPN-BACKUP tunnel endpoint |
+
+**Hub3 Resources:**
+
+| Resource | Output Name | Description |
+|----------|-------------|-------------|
+| Hub3 VPN GW Instance 0 | `hub3VpnGwPublicIp0` | Hub3 ER-PATH tunnel endpoint |
+| Hub3 VPN GW Instance 1 | `hub3VpnGwPublicIp1` | Hub3 VPN-BACKUP tunnel endpoint |
 
 **BGP Peer IPs** (check with `az network vpn-gateway show`):
-- Instance 0: `192.168.1.12` → conn-er-path (ER simulator)
-- Instance 1: `192.168.1.13` → conn-vpn-backup (VPN backup)
+- Hub1 Instance 0: `192.168.1.12` → er-path tunnel (ER simulator)
+- Hub1 Instance 1: `192.168.1.13` → vpn-backup tunnel
+- Hub2 Instance 0/1: Assigned from `192.168.2.0/24` (check deployment output)
+- Hub3 Instance 0/1: Assigned from `192.168.3.0/24` (check deployment output)
 
 ## Lab Testing Scenarios
 
 ### Scenario 1: Observe LPM Behavior (The Problem)
 
+> The steps below use hub1 as an example. Repeat the same steps for hub2 and hub3 by substituting the hub name and spoke names where applicable.
+
 1. SSH to both FRR routers (IPs shown in deployment output)
 2. Verify BGP sessions on each:
    ```bash
-   # On frr-router (ER-PATH)
-   sudo vtysh -c "show ip bgp summary"
-   sudo vtysh -c "show ip bgp neighbors 192.168.1.13 advertised-routes"
-   
-   # On frr-router-backup (VPN-BACKUP)
+   # On frr-router (ER-PATH) - shows 3 BGP peers (one per hub)
    sudo vtysh -c "show ip bgp summary"
    sudo vtysh -c "show ip bgp neighbors 192.168.1.12 advertised-routes"
+   
+   # On frr-router-backup (VPN-BACKUP) - shows 3 BGP peers (one per hub)
+   sudo vtysh -c "show ip bgp summary"
+   sudo vtysh -c "show ip bgp neighbors 192.168.1.13 advertised-routes"
    ```
 3. Check vWAN effective routes in Azure Portal:
-   - Navigate to **Virtual WAN** → **hub1** → **Routing** → **Effective Routes**
+   - Navigate to **Virtual WAN** → **hub1-westus3** → **Routing** → **Effective Routes**
 4. **Expected**: The /24 routes from VPN-BACKUP are preferred for 10.0.1.x and 10.0.2.x due to LPM
 
 ### Scenario 2: Failover Test
@@ -176,15 +211,20 @@ After deployment, note these key values:
 
 ### Scenario 4: Apply Route Maps (The Fix)
 
-1. Create the Route Map with summarization + AS-path prepending:
+1. Create the Route Map with summarization + AS-path prepending for **all three hubs**:
    ```powershell
-   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab" -HubName "hub1"
+   # Hub1
+   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab" -HubName "hub1-westus3"
+   # Hub2
+   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab" -HubName "hub2-eastus2"
+   # Hub3
+   .\scripts\add-route-maps.ps1 -ResourceGroupName "vwan-failover-lab" -HubName "hub3-westus"
    ```
    
    Or manually via Azure CLI:
    ```powershell
    # Create route map with two rules
-   az network vhub route-map create -g vwan-failover-lab --vhub-name hub1 -n summarize-vpn --rules '[
+   az network vhub route-map create -g vwan-failover-lab --vhub-name hub1-westus3 -n summarize-vpn --rules '[
      {
        "name": "rule1-summarize",
        "matchCriteria": [{"matchCondition": "Contains", "routePrefix": ["10.0.0.0/16"]}],
@@ -200,16 +240,24 @@ After deployment, note these key values:
    ]'
    
    # Get route map ID
-   $routeMapId = az network vhub route-map show -g vwan-failover-lab --vhub-name hub1 -n summarize-vpn --query id -o tsv
+   $routeMapId = az network vhub route-map show -g vwan-failover-lab --vhub-name hub1-westus3 -n summarize-vpn --query id -o tsv
    
-   # Apply to VPN-backup connection inbound
-   az network vpn-gateway connection update -g vwan-failover-lab --gateway-name hub1-vpngw -n conn-vpn-backup --set routingConfiguration.inboundRouteMap.id=$routeMapId
+   # Apply to VPN-backup connection inbound (Hub1)
+   az network vpn-gateway connection update -g vwan-failover-lab --gateway-name hub1-westus3-vpngw -n conn-vpn-backup --set routingConfiguration.inboundRouteMap.id=$routeMapId
+
+   # Repeat for Hub2
+   $routeMapIdHub2 = az network vhub route-map show -g vwan-failover-lab --vhub-name hub2-eastus2 -n summarize-vpn --query id -o tsv
+   az network vpn-gateway connection update -g vwan-failover-lab --gateway-name hub2-eastus2-vpngw -n conn-vpn-backup-hub2 --set routingConfiguration.inboundRouteMap.id=$routeMapIdHub2
+
+   # Repeat for Hub3
+   $routeMapIdHub3 = az network vhub route-map show -g vwan-failover-lab --vhub-name hub3-westus -n summarize-vpn --query id -o tsv
+   az network vpn-gateway connection update -g vwan-failover-lab --gateway-name hub3-westus-vpngw -n conn-vpn-backup-hub3 --set routingConfiguration.inboundRouteMap.id=$routeMapIdHub3
    ```
 
 2. Wait 2-3 minutes for the route map to take effect
 3. Verify routes show VPN-backup with longer AS-path:
    ```powershell
-   az network vhub get-effective-routes -g vwan-failover-lab -n hub1 --resource-type VpnConnection --resource-id (az network vpn-gateway connection show -g vwan-failover-lab --gateway-name hub1-vpngw -n conn-vpn-backup --query id -o tsv) -o table
+   az network vhub get-effective-routes -g vwan-failover-lab -n hub1-westus3 --resource-type VpnConnection --resource-id (az network vpn-gateway connection show -g vwan-failover-lab --gateway-name hub1-westus3-vpngw -n conn-vpn-backup --query id -o tsv) -o table
    ```
 4. **Expected**: Traffic now prefers ER-PATH (192.168.1.12) due to shorter AS-path
 
@@ -255,7 +303,7 @@ ssh azureuser@<frr-router-backup-public-ip>
 
 Common commands:
 ```bash
-# Show BGP summary
+# Show BGP summary (will show 3 peers — one per hub)
 sudo vtysh -c "show ip bgp summary"
 
 # Show BGP neighbors
@@ -288,6 +336,8 @@ sudo vtysh -c "show running-config"
 3. **AS-PATH Prepending** — Only effective when prefix lengths are equal
 4. **vWAN Route Maps** — Filter or modify routes learned from VPN connections
 5. **Per-neighbor BGP Policies** — Different routes advertised per BGP peer (via FRRouting)
+6. **Multi-hub vWAN** — Hub-to-hub routing across three regions with consistent VPN failover behavior
+7. **Multi-tunnel on-prem** — Single FRR VM maintaining IPsec tunnels to multiple hub VPN gateways
 
 ## Best Practices for Production
 
